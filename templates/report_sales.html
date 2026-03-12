@@ -1,0 +1,80 @@
+{% extends 'layout.html' %}
+
+{% block content %}
+<div class="card shadow mb-4">
+	<div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+		<h4 class="card-title mb-0"><i class="bi bi-graph-up-arrow"></i> Звіт по продажах та прибутку</h4>
+		<span class="badge bg-light text-dark">Період: {{ start_date }} — {{ end_date }}</span>
+	</div>
+	<div class="card-body">
+
+		<form hx-get="{{ url_for('main.report_sales') }}" hx-target="#main-content" class="row g-3 mb-4 p-3 bg-light rounded border">
+			<div class="col-md-4">
+				<label class="form-label small fw-bold">Початок періоду</label>
+				<input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+			</div>
+			<div class="col-md-4">
+				<label class="form-label small fw-bold">Кінець періоду</label>
+				<input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+			</div>
+			<div class="col-md-4 d-flex align-items-end">
+				<button type="submit" class="btn btn-primary w-100">
+					<i class="bi bi-filter"></i> Сформувати звіт
+				</button>
+			</div>
+		</form>
+
+		<div class="table-responsive">
+			<table class="table table-hover table-bordered align-middle">
+				<thead class="table-secondary text-center">
+					<tr>
+						<th>Товар</th>
+						<th style="width: 100px;">Кіл-сть</th>
+						<th>Сума продажу</th>
+						<th>Собівартість</th>
+						<th>Прибуток</th>
+						<th style="width: 80px;">Маржа (%)</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for row in data %}
+					<tr>
+						<td>{{ row.product }}</td>
+						<td class="text-end">{{ "{:,.3f}".format(row.qty) }}</td>
+						<td class="text-end">{{ "{:,.2f}".format(row.sales_sum) }}</td>
+						<td class="text-end text-muted">{{ "{:,.2f}".format(row.cost_sum) }}</td>
+						<td class="text-end fw-bold {% if row.profit > 0 %}text-success{% elif row.profit < 0 %}text-danger{% endif %}">
+							{{ "{:,.2f}".format(row.profit) }}
+						</td>
+						<td class="text-center small">
+							<span class="badge {% if row.margin > 20 %}bg-success{% else %}bg-info{% endif %}">
+								{{ "{:,.1f}".format(row.margin) }}%
+							</span>
+						</td>
+					</tr>
+					{% else %}
+					<tr>
+						<td colspan="6" class="text-center text-muted py-4">За вказаний період продажів не знайдено</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+				<tfoot class="table-dark">
+					<tr>
+						<td colspan="2" class="text-end fw-bold">РАЗОМ:</td>
+						<td class="text-end">{{ "{:,.2f}".format(data|sum(attribute='sales_sum')) }}</td>
+						<td class="text-end">{{ "{:,.2f}".format(data|sum(attribute='cost_sum')) }}</td>
+						<td class="text-end">{{ "{:,.2f}".format(total_profit) }}</td>
+						<td></td>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
+	</div>
+</div>
+
+<div class="d-flex justify-content-end">
+	<button class="btn btn-outline-secondary" onclick="window.print()">
+		<i class="bi bi-printer"></i> Друкувати звіт
+	</button>
+</div>
+{% endblock %}

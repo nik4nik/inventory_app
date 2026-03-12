@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Податкова накладна № {{ doc.number }}</title>
+    <style>
+        body { font-family: "DejaVu Sans", sans-serif; font-size: 10px; }
+        .tax-header { text-align: right; margin-bottom: 20px; }
+        .main-title { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 10px; }
+        .info-block { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        .info-block td { border: 1px solid #000; padding: 5px; }
+        .items-table { width: 100%; border-collapse: collapse; }
+        .items-table th, .items-table td { border: 1px solid #000; padding: 3px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="tax-header">ЗАТВЕРДЖЕНО<br>Наказ Міністерства фінансів України</div>
+    
+    <div class="main-title">ПОДАТКОВА НАКЛАДНА № {{ doc.number }} від {{ doc.date.strftime('%d.%m.%Y') }}</div>
+
+    <table class="info-block">
+        <tr>
+            <td><strong>Постачальник:</strong> {{ "ТОВ 'ДОБРО'" }}<br>ІПН: 123456789012</td>
+            <td><strong>Покупець:</strong> {{ doc.counterparty.name }}<br>ІПН: {{ doc.counterparty.inn or '---' }}</td>
+        </tr>
+    </table>
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Опис товарів/послуг</th>
+                <th>Код УКТ ЗЕД</th>
+                <th>Од. вим.</th>
+                <th>Кіл-сть</th>
+                <th>Ціна без ПДВ</th>
+                <th>Сума ПДВ</th>
+                <th>Усього з ПДВ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in doc.lines %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td style="text-align: left;">{{ line.product.name }}</td>
+                <td>{{ line.product.uktzed or '---' }}</td>
+                <td>{{ line.product.unit or 'шт.' }}</td>
+                <td>{{ "{:,.3f}".format(line.quantity) }}</td>
+                <td>{{ "{:,.2f}".format(line.price|float / 1.2) }}</td>
+                <td>{{ "{:,.2f}".format(line.row_total * 0.2 / 1.2) }}</td>
+                <td>{{ "{:,.2f}".format(line.row_total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="margin-top: 20px;">
+        <strong>Сума ПДВ:</strong> {{ "{:,.2f}".format(doc.total_sum * 0.2 / 1.2) }} грн.<br>
+        <strong>Загальна сума з ПДВ:</strong> {{ "{:,.2f}".format(doc.total_sum) }} грн.
+    </div>
+</body>
+</html>

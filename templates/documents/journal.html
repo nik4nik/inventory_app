@@ -1,0 +1,105 @@
+{% extends 'layout.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+	<h2>{{ title }}</h2>
+
+	{% if type == 'ORDER' %}
+		{% set target_url = url_for('docs.create_order') %}
+		{% set btn_style = 'btn-primary' %}
+	{% elif type == 'INVOICE' %}
+		{% set target_url = url_for('docs.create_invoice') %}
+		{% set btn_style = 'btn-info' %}
+	{% elif type == 'IN' %}
+		{% set target_url = url_for('docs.create_incoming') %}
+		{% set btn_style = 'btn-info' %}
+	{% elif type == 'OUT' %}
+		{% set target_url = url_for('docs.create_outgoing') %}
+		{% set btn_style = 'btn-info' %}
+	{% endif %}
+
+	{% if target_url %}
+	<a hx-get="{{ target_url }}"
+	   hx-target="#main-content"
+	   hx-push-url="true"
+	   class="btn {{ btn_style }} shadow-sm">
+		<i class="bi bi-plus-lg"></i> Створити новий
+	</a>
+	{% endif %}
+
+</div>
+
+<div class="card shadow-sm">
+	<div class="table-responsive">
+		<table class="table table-hover mb-0">
+			<thead class="{{ 'table-success' if type == 'IN' else ('table-warning' if type == 'OUT' else 'table-light') }}">
+				<tr>
+					<th style="width: 120px;">Дата</th>
+					<th style="width: 150px;">Номер</th>
+					<th>Контрагент</th>
+					<th class="text-end" style="width: 150px;">Сума</th>
+					<th style="width: 120px;">Статус</th>
+					<th class="text-end" style="width: 200px;">Дії</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for d in docs %}
+				<tr>
+					<td>{{ d.date.strftime('%d.%m.%Y') }}</td>
+					<td><strong>{{ d.number }}</strong></td>
+					{# Колонка Контрагент #}
+					<td>
+						{% if d.counterparty %}
+							{{ d.counterparty.name }}
+						{% else %}
+							<span class="text-muted small">---</span>
+						{% endif %}
+					</td>
+					{# Колонка Сумма #}
+					<td class="text-end fw-bold">
+						{{ "{:,.2f}".format(d.total_sum|float) }}
+					</td>
+					<td>
+						{% if d.is_posted %}
+							<span class="badge bg-success-subtle text-success border border-success-subtle">Проведений</span>
+						{% else %}
+							<span class="badge bg-light text-muted border">Чернетка</span>
+						{% endif %}
+					</td>
+					<td class="text-end">
+						<div class="btn-group shadow-sm">
+							<a hx-get="{{ url_for('docs.document_detail', doc_id=d.id) }}"
+							   hx-target="#main-content"
+							   hx-push-url="true"
+							   class="btn btn-sm btn-outline-primary">
+								<i class="bi bi-eye"></i>
+							</a>
+
+							{% if d.doc_type.name in ['ORDER', 'INVOICE', 'OUT'] %}
+							<button hx-post="{{ url_for('docs.create_from_parent', doc_id=d.id) }}"
+									hx-target="#main-content"
+									class="btn btn-sm btn-primary"
+									title="Створити на підставі">
+								<i class="bi bi-files"></i>
+								{% if d.doc_type.name == 'ORDER' %}
+									Рахунок
+								{% elif d.doc_type.name == 'INVOICE' %}
+									Видаток
+								{% elif d.doc_type.name == 'OUT' %}
+									Податкова
+								{% endif %}
+							</button>
+							{% endif %}
+						</div>
+					</td>
+				</tr>
+				{% else %}
+				<tr>
+					<td colspan="6" class="text-center py-4 text-muted">Документів поки немає</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+</div>
+{% endblock %}

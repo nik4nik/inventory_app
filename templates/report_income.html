@@ -1,0 +1,84 @@
+{% extends 'layout.html' %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+	<div class="d-flex justify-content-between align-items-center mb-3">
+		<h3><i class="bi bi-cash-stack text-success"></i> Аналіз доходів та прибутковості</h3>
+		<button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+			<i class="bi bi-printer"></i> Друк звіту
+		</button>
+	</div>
+
+	<div class="card mb-4 bg-light shadow-sm">
+		<div class="card-body">
+			<form hx-get="{{ url_for('main.report_income') }}" hx-target="#main-content" class="row g-2">
+				<div class="col-md-3">
+					<input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+				</div>
+				<div class="col-md-3">
+					<input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+				</div>
+				<div class="col-md-2">
+					<button type="submit" class="btn btn-primary w-100">Оновити</button>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<div class="row mb-4">
+		<div class="col-md-4">
+			<div class="card border-primary text-center p-3">
+				<small class="text-muted text-uppercase fw-bold">Виручка</small>
+				<h2 class="text-primary">{{ "{:,.2f}".format(grand_sales) }}</h2>
+			</div>
+		</div>
+		<div class="col-md-4">
+			<div class="card border-secondary text-center p-3">
+				<small class="text-muted text-uppercase fw-bold">Собівартість</small>
+				<h2>{{ "{:,.2f}".format(grand_cost) }}</h2>
+			</div>
+		</div>
+		<div class="col-md-4">
+			<div class="card border-success text-center p-3">
+				<small class="text-muted text-uppercase fw-bold">Валовий прибуток</small>
+				<h2 class="text-success">{{ "{:,.2f}".format(grand_profit) }}</h2>
+			</div>
+		</div>
+	</div>
+
+	<div class="card shadow-sm">
+		<div class="table-responsive">
+			<table class="table table-hover table-striped mb-0">
+				<thead class="table-dark">
+					<tr>
+						<th>Найменування товару</th>
+						<th class="text-end">Кількість</th>
+						<th class="text-end">Виручка</th>
+						<th class="text-end">Собівартість</th>
+						<th class="text-end">Прибуток</th>
+						<th class="text-center">Маржа</th>
+					</tr>
+				</thead>
+				<tbody>
+					{% for row in rows %}
+					<tr>
+						<td>{{ row.name }}</td>
+						<td class="text-end text-nowrap">{{ "{:,.2f}".format(row.qty) }}</td>
+						<td class="text-end">{{ "{:,.2f}".format(row.sales) }}</td>
+						<td class="text-end text-muted small">{{ "{:,.2f}".format(row.cost) }}</td>
+						<td class="text-end fw-bold {{ 'text-success' if row.profit > 0 else 'text-danger' }}">
+							{{ "{:,.2f}".format(row.profit) }}
+						</td>
+						<td class="text-center">
+							<span class="badge {{ 'bg-success' if row.margin > 15 else 'bg-warning text-dark' }}">
+								{{ "{:,.1f}".format(row.margin) }}%
+							</span>
+						</td>
+					</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</div>
+{% endblock %}

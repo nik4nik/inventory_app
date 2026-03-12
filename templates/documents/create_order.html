@@ -1,0 +1,92 @@
+{% extends 'layout.html' %}
+
+{% block content %}
+<div class="card shadow">
+	<div class="card-header bg-info text-white">
+		<h4 class="card-title mb-0">Нове замовлення покупця</h4>
+	</div>
+	<div class="card-body">
+		{# Форма отправляется на текущий URL (например, /order/new) через HTMX #}
+		<form hx-post="{{ request.path }}" hx-target="#main-content" hx-push-url="true">
+
+			<div class="row g-3 mb-4 p-3 bg-light rounded border">
+				<div class="col-md-4">
+					<label class="form-label fw-bold">Номер документа</label>
+					<input type="text" name="number" class="form-control" placeholder="Автозаповнення">
+				</div>
+				<div class="col-md-8">
+					<label class="form-label fw-bold">Покупець</label>
+					<select name="counterparty_id" class="form-select" required>
+						<option value="" disabled selected>-- Оберіть контрагента --</option>
+						{% for c in counterparties %}
+						<option value="{{ c.id }}">{{ c.name }}</option>
+						{% endfor %}
+					</select>
+				</div>
+				{# Склад убран, так как это Заказ #}
+			</div>
+
+			<h5 class="mb-3 text-info"><i class="bi bi-cart"></i> Товари та послуги</h5>
+			<div class="table-responsive">
+				<table class="table table-bordered align-middle" id="items-table">
+					<thead class="table-light text-center">
+						<tr>
+							<th style="width: 45%;">Товар</th>
+							<th style="width: 20%;">Кількість</th>
+							<th style="width: 25%;">Очікувана ціна</th>
+							<th style="width: 10%;"></th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="product-row">
+							<td>
+								<select name="product_id[]" class="form-select" required>
+									<option value="" disabled selected>Виберіть товар...</option>
+									{% for p in products %}
+									<option value="{{ p.id }}">{{ p.name }}</option>
+									{% endfor %}
+								</select>
+							</td>
+							<td><input type="number" name="quantity[]" class="form-control text-end" step="0.001" required></td>
+							<td><input type="number" name="price[]" class="form-control text-end" step="0.01" required></td>
+							<td class="text-center">
+								<button type="button" class="btn btn-link text-danger remove-line p-0"
+										onclick="if(document.querySelectorAll('.product-row').length > 1) this.closest('tr').remove();">
+									<i class="bi bi-trash"></i>
+								</button>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+
+			<div class="d-flex justify-content-between mt-3">
+				<button type="button" class="btn btn-outline-info btn-sm" onclick="addRow()">
+					<i class="bi bi-plus-circle"></i> Додати рядок
+				</button>
+				<div class="gap-2 d-flex">
+					<button type="button" onclick="history.back()" class="btn btn-light border">Відміна</button>
+					<button type="submit" class="btn btn-info text-white px-5">Зберегти замовлення</button>
+				</div>
+			</div>
+		</form>
+	</div>
+</div>
+
+<script>
+/**
+ * Функция добавления строки (аналогично incoming)
+ */
+function addRow() {
+	const table = document.getElementById('items-table').getElementsByTagName('tbody')[0];
+	const firstRow = table.querySelector('.product-row');
+	const newRow = firstRow.cloneNode(true);
+
+	// Очищаем значения полей в новой строке
+	newRow.querySelectorAll('input').forEach(input => input.value = '');
+	newRow.querySelectorAll('select').forEach(select => select.selectedIndex = 0);
+
+	table.appendChild(newRow);
+}
+</script>
+{% endblock %}

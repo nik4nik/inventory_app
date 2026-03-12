@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+	<meta charset="UTF-8">
+	<title>Прибуткова накладна № {{ doc.number }}</title>
+	<style>
+		body { font-family: "DejaVu Sans", sans-serif; font-size: 12px; line-height: 1.4; color: #000; margin: 20px; }
+		.header { border-bottom: 2px solid #000; margin-bottom: 10px; padding-bottom: 5px; }
+		.header h1 { font-size: 18px; margin: 0; }
+
+		.info-table { width: 100%; margin-bottom: 20px; }
+		.info-table td { vertical-align: top; padding: 2px 0; }
+		.label { width: 120px; color: #555; }
+		.value { font-weight: bold; }
+		.details { font-size: 10px; font-weight: normal; color: #333; display: block; max-width: 500px; }
+
+		.items-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+		.items-table th, .items-table td { border: 1px solid #000; padding: 4px 8px; }
+		.items-table th { background-color: #eee; font-weight: bold; }
+		.text-end { text-align: right; }
+		.text-center { text-align: center; }
+
+		.totals { width: 100%; text-align: right; margin-top: 10px; }
+		.totals td { padding: 2px 10px; }
+		.grand-total { font-weight: bold; font-size: 14px; }
+
+		.footer-note { margin-top: 20px; border-bottom: 1px solid #000; padding-bottom: 20px; }
+		.signatures { display: flex; justify-content: space-between; margin-top: 40px; }
+		.sig-line { border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px; margin-top: 20px; }
+
+		@media print {
+			.no-print { display: none; }
+			body { margin: 0; }
+		}
+	</style>
+</head>
+<body>
+	<div class="no-print" style="margin-bottom: 20px; text-align: right;">
+		<button onclick="window.print()" style="padding: 10px 20px; cursor: pointer;">Друк</button>
+	</div>
+
+	<div class="header">
+		<h1>Прибуткова накладна № {{ doc.number }} від {{ doc.date.strftime('%d.%m.%Y') }} р.</h1>
+	</div>
+
+	<table class="info-table">
+		<tr>
+			<td class="label">Постачальник:</td>
+			<td class="value">{{ doc.counterparty.name if doc.counterparty else '---' }}</td>
+		</tr>
+		<tr>
+			<td class="label">Покупець:</td>
+			<td class="value">
+				ТОВ "Твоя Компанія" <br>
+				<span class="details">Код ЄДРПОУ: 12345678, м. Київ, вул. Прикладна 1</span>
+			</td>
+		</tr>
+		<tr>
+			<td class="label">Склад:</td>
+			<td class="value">{{ doc.warehouse.name if doc.warehouse else '---' }}</td>
+		</tr>
+	</table>
+
+	<table class="items-table">
+		<thead>
+			<tr>
+				<th style="width: 30px;">№</th>
+				<th>Товар</th>
+				<th style="width: 80px;">Кіл-сть</th>
+				<th style="width: 50px;">Од.</th>
+				<th style="width: 100px;">Ціна з ПДВ</th>
+				<th style="width: 120px;">Сума з ПДВ</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for line in doc.lines %}
+			<tr>
+				<td class="text-center">{{ loop.index }}</td>
+				<td>{{ line.product.name }}</td>
+				<td class="text-end">{{ "{:,.3f}".format(line.quantity) }}</td>
+				<td class="text-center">{{ line.product.unit or 'шт.' }}</td>
+				<td class="text-end">{{ "{:,.2f}".format(line.price) }}</td>
+				<td class="text-end">{{ "{:,.2f}".format(line.row_total) }}</td>
+			</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+
+	<div class="totals">
+		<table>
+			<tr>
+				<td style="width: 85%;">Всього:</td>
+				<td class="grand-total">{{ "{:,.2f}".format(doc.total_sum) }}</td>
+			</tr>
+			<tr>
+				<td>У тому числі ПДВ:</td>
+				<td>{{ "{:,.2f}".format(doc.vat_amount) }}</td>
+			</tr>
+		</table>
+	</div>
+
+	<div class="words-total">
+		Всього найменувань {{ doc.lines|length }}, на суму {{ "{:,.2f}".format(doc.total_sum) }} грн.
+		<div style="text-transform: capitalize; margin-top: 5px;">
+			<strong>{{ doc.total_text }}</strong>
+		</div>
+		<div style="font-size: 11px; margin-top: 2px;">
+			У т.ч. ПДВ: {{ doc.vat_text }}
+		</div>
+	</div>
+
+	<div class="signatures">
+		<div>
+			Відвантажив(ла):
+			<div class="sig-line"></div>
+		</div>
+		<div>
+			Отримав(ла):
+			<div class="sig-line">_________________________</div>
+		</div>
+	</div>
+</body>
+</html>
