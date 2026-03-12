@@ -57,7 +57,7 @@
 					</td>
 					{# Колонка Сумма #}
 					<td class="text-end fw-bold">
-						{{ "{:,.2f}".format(d.total_sum|float) }}
+						{{ "{:,.2f}".format(d.total_sum|float) if d.total_sum is defined else '0.00' }}
 					</td>
 					<td>
 						{% if d.is_posted %}

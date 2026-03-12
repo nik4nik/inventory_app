@@ -241,6 +241,7 @@ def delete_document(doc_id):
 		DocumentType.INVOICE: ('Рахунки-фактури', 'INVOICE'),
 		DocumentType.IN:	('Прибуткові накладні', 'IN'),
 		DocumentType.OUT:	('Видаткові накладні', 'OUT'),
+		DocumentType.TAX:	('Податкові накладні', 'TAX'),
 	}
 	title, d_type = type_to_journal.get(doc.doc_type)
 
@@ -254,7 +255,7 @@ def delete_document(doc_id):
 	return render_template('documents/journal.html',
 			title=title,
 			docs=docs,
-			type=d_type.name
+			type=d_type
 		)
 
 @docs_bp.route('/document/<int:doc_id>')
