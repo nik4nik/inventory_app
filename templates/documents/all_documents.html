@@ -1,34 +1,140 @@
 {% extends 'layout.html' %}
 
 {% block content %}
-<h2>Журнал документов</h2>
+{% set doc_config = {
+	'IN':	   {'class': 'bg-success-subtle text-success border-success-subtle'},
+	'OUT':	   {'class': 'bg-danger-subtle text-danger border-danger-subtle'},
+	'ORDER':   {'class': 'bg-primary-subtle text-primary border-primary-subtle'},
+	'INVOICE': {'class': 'bg-info-subtle text-info border-info-subtle'},
+	'TAX':	   {'class': 'bg-secondary-subtle text-secondary border-secondary-subtle'}
+} %}
 
-<table class="table table-hover mt-3 shadow-sm">
-	<thead class="table-light">
-		<tr><th>Дата</th><th>Тип</th><th>Номер</th><th>Статус</th><th>Действие</th></tr>
-	</thead>
-	<tbody>
-		{% for d in docs %}
-		<tr>
-			<td>{{ d.date.strftime('%d.%m.%Y') }}</td>
-			<td>
-				<span class="badge {{ 'bg-success' if d.doc_type.value == 'IN' else 'bg-warning text-dark' }}">
-					{{ 'Приход' if d.doc_type.value == 'IN' else 'Расход' }}
-				</span>
-			</td>
-			<td><strong>{{ d.number }}</strong></td>
-			<td>
-				{% if d.is_posted %}
-					<span class="text-success">● Проведен</span>
-				{% else %}
-					<span class="text-muted">○ Черновик</span>
+<div class="d-flex justify-content-between align-items-center mb-4">
+	<div class="d-flex gap-3 align-items-center">
+		<h2 class="mb-0">{{ title or 'Загальний журнал документів' }}</h2>
+
+		<button id="btn-create-based"
+			class="btn btn-outline-primary shadow-sm"
+			style="display: none;"
+			hx-post=""
+			hx-target="#main-content"
+			hx-push-url="true">
+			<i class="bi bi-files"></i> На підставі <span id="based-label"></span>
+		</button>
+	</div>
+</div>
+
+<div class="card shadow-sm">
+	<div class="table-responsive">
+		<table class="table mb-0" id="docs-table">
+			<thead class="table-light">
+				<tr>
+					<th style="width: 50px;" class="text-center">#</th>
+					<th style="width: 160px;">Дата</th>
+					<th style="width: 150px;">Тип</th>
+					<th style="width: 150px;">Номер</th>
+					<th>Контрагент</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for d in docs %}
+				{# Определяем URL открытия #}
+				{% set row_url = url_for('docs.edit_document', doc_id=d.id) %}
+
+				{# Логика для кнопки "На основании" #}
+				{% set b_name = '' %}
+				{% if d.doc_type.name == 'ORDER' %}{% set b_name = 'Рахунок' %}
+				{% elif d.doc_type.name == 'INVOICE' %}{% set b_name = 'Видаток' %}
+				{% elif d.doc_type.name == 'OUT' %}{% set b_name = 'Податкова' %}
 				{% endif %}
-			</td>
-			<td>
-				<a href="{{ url_for('docs.document_detail', doc_id=d.id) }}" class="btn btn-sm btn-primary">Открыть</a>
-			</td>
-		</tr>
-		{% endfor %}
-	</tbody>
-</table>
+
+				<tr class="align-middle doc-row"
+					data-doc-id="{{ d.id }}"
+					data-based-name="{{ b_name }}"
+					data-row-url="{{ row_url }}">
+
+					<td class="text-center">
+						{% if d.is_posted %}
+							<i class="bi bi-check-lg text-success fs-5"></i>
+						{% else %}
+							<i class="bi bi-dot text-muted fs-5"></i>
+						{% endif %}
+					</td>
+					<td>{{ d.date.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+					<td>
+						{% set cfg = doc_config.get(d.doc_type.value, {'class': 'bg-light text-dark'}) %}
+						<span class="badge border {{ cfg.class }}">
+							{{ d.doc_type.label }}
+						</span>
+					</td>
+					<td><strong>{{ d.number }}</strong></td>
+					<td>{{ d.counterparty.name if d.counterparty else '---' }}</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<style>
+	.doc-row { cursor: pointer; user-select: none; }
+
+	.doc-row.selected-row td {
+		background-color: #e7f1ff !important;
+	}
+	.doc-row.selected-row td:first-child {
+		box-shadow: inset 4px 0 0 #0d6efd !important;
+	}
+	.table-hover tbody tr:hover { background-color: rgba(0, 0, 0, 0.02); }
+</style>
+
+<script>
+	{#
+	   Используем защиту от повторного навешивания слушателя,
+	   так как layout.html у нас общий
+	#}
+	if (!window._docsListenerAdded) {
+		window._docsListenerAdded = true;
+		window._clickTimer = null;
+
+		document.addEventListener('click', function(e) {
+			const row = e.target.closest('.doc-row');
+			if (!row) return;
+
+			if (window._clickTimer) {
+				clearTimeout(window._clickTimer);
+				window._clickTimer = null;
+				const url = row.dataset.rowUrl;
+				htmx.ajax('GET', url, { target: '#main-content', pushUrl: true });
+			} else {
+				window._clickTimer = setTimeout(() => {
+					window._clickTimer = null;
+					handleSelection(row);
+				}, 250);
+			}
+		});
+	}
+
+	function handleSelection(row) {
+		document.querySelectorAll('.doc-row').forEach(r => r.classList.remove('selected-row'));
+		row.classList.add('selected-row');
+
+		const docId = row.dataset.docId;
+		const basedName = row.dataset.basedName;
+		const btn = document.getElementById('btn-create-based');
+		const label = document.getElementById('based-label');
+
+		if (btn && label) {
+			if (basedName && basedName.length > 0) {
+				label.innerText = basedName;
+				btn.style.display = 'inline-block';
+				// Используем правильный маршрут, который мы выяснили ранее
+				btn.setAttribute('hx-post', `/documents/${docId}/generate-next`);
+				if (typeof htmx !== 'undefined') htmx.process(btn);
+			} else {
+				btn.style.display = 'none';
+			}
+		}
+	}
+</script>
 {% endblock %}

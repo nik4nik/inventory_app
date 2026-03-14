@@ -1,13 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import (Blueprint, flash, jsonify, make_response, render_template,
+	request, redirect, url_for)
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from models import db, Counterparty, Product, Warehouse, Document, DocumentLine, DocumentType
 from inventory_service import InventoryService, InsufficientStockError
-from utils import amount_to_ua_text, get_journal_docs, save_document_from_form
+import utils
 
 docs_bp = Blueprint('docs', __name__)
 
@@ -21,33 +22,33 @@ def all_documents():
 
 @docs_bp.route('/journals/incoming')
 def journal_incoming():
-	docs = get_journal_docs(DocumentType.IN)
+	docs = utils.get_journal_docs(DocumentType.IN)
 	return render_template('documents/journal.html', docs=docs, title="Прибуткові накладні", type='IN')
 
 @docs_bp.route('/journals/outgoing')
 def journal_outgoing():
-	docs = get_journal_docs(DocumentType.OUT)
+	docs = utils.get_journal_docs(DocumentType.OUT)
 	return render_template('documents/journal.html', docs=docs, title="Видаткові накладні", type='OUT')
 
 @docs_bp.route('/journals/orders')
 def journal_orders():
-	docs = get_journal_docs(DocumentType.ORDER)
+	docs = utils.get_journal_docs(DocumentType.ORDER)
 	return render_template('documents/journal.html', docs=docs, title="Замовлення покупців", type='ORDER')
 
 @docs_bp.route('/journals/invoices')
 def journal_invoices():
-	docs = get_journal_docs(DocumentType.INVOICE)
+	docs = utils.get_journal_docs(DocumentType.INVOICE)
 	return render_template('documents/journal.html', docs=docs, title="Рахунки-фактури", type='INVOICE')
 
-# --- СОЗДАНИЕ ---
+# --- СОЗДАНИЕ / СОЗДАНИЕ НА ОСНОВАНИИ ---
 
 @docs_bp.route('/order/new', methods=['GET', 'POST'])
 def create_order():
 	if request.method == 'POST':
-		new_doc = save_document_from_form(DocumentType.ORDER)
+		new_doc = utils.save_document_from_form(DocumentType.ORDER)
 		db.session.commit()
 		flash("Замовлення збережено", "success")
-		return render_template('documents/document_details.html', doc=new_doc)
+		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
 
 	return render_template('documents/create_order.html',
 			counterparties = Counterparty.query.all(),
@@ -56,10 +57,10 @@ def create_order():
 @docs_bp.route('/invoice/new', methods=['GET', 'POST'])
 def create_invoice():
 	if request.method == 'POST':
-		new_doc = save_document_from_form(DocumentType.INVOICE)
+		new_doc = utils.save_document_from_form(DocumentType.INVOICE)
 		db.session.commit()
 		flash("Рахунок збережено", "success")
-		return render_template('documents/document_details.html', doc=new_doc)
+		return redirect(url_for('docs.edit_document.html', doc_id=new_doc.id))
 
 	return render_template('documents/create_invoice.html',
 			counterparties = Counterparty.query.all(),
@@ -68,10 +69,10 @@ def create_invoice():
 @docs_bp.route('/incoming/new', methods=['GET', 'POST'])
 def create_incoming():
 	if request.method == 'POST':
-		new_doc = save_document_from_form('IN')
+		new_doc = utils.save_document_from_form('IN')
 		db.session.commit()
 		# Возвращаем шаблон деталей, чтобы HTMX подставил его в центр экрана
-		return render_template('documents/document_details.html', doc=new_doc)
+		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
 
 	# GET запрос: показываем пустую форму
 	warehouses = Warehouse.query.all()
@@ -85,9 +86,9 @@ def create_incoming():
 @docs_bp.route('/outgoing/new', methods=['GET', 'POST'])
 def create_outgoing():
 	if request.method == 'POST':
-		new_doc = save_document_from_form('OUT')
+		new_doc = utils.save_document_from_form('OUT')
 		db.session.commit()
-		return render_template('documents/document_details.html', doc=new_doc)
+		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
 
 	warehouses = Warehouse.query.all()
 	counterparties = Counterparty.query.all()
@@ -96,54 +97,6 @@ def create_outgoing():
 			warehouses=warehouses,
 			counterparties=counterparties,
 			products=products)
-
-# --- СОЗДАНИЕ НА ОСНОВАНИИ / РЕДАКТИРОВАНИЕ / ПРОВЕДЕНИЕ / УДАЛЕНИЕ ---
-
-@docs_bp.route('/documents/<int:doc_id>/edit', methods=['GET', 'POST'])
-def edit_document(doc_id):
-	doc = db.session.get(Document, doc_id)
-	if doc.is_posted:
-		flash("Не можна редагувати проведений документ!", "warning")
-		return render_template('documents/document_details.html', doc=doc)
-
-	if request.method == 'POST':
-		try:
-			doc.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d').date()
-			doc.warehouse_id = request.form.get('warehouse_id') or None
-			doc.counterparty_id = request.form.get('counterparty_id') or None
-			doc.note = request.form.get('note')
-
-			for line in list(doc.lines):
-				db.session.delete(line)
-
-			product_ids = request.form.getlist('product_id[]')
-			quantities = request.form.getlist('quantity[]')
-			prices = request.form.getlist('price[]')
-
-			for p_id, qty, prc in zip(product_ids, quantities, prices):
-				if p_id and qty:
-					new_line = DocumentLine(
-						document_id=doc.id,
-						product_id=int(p_id),
-						quantity=float(qty),
-						price=float(prc)
-					)
-					db.session.add(new_line)
-
-			db.session.commit()
-			flash("Документ успішно оновлено", "success")
-			return render_template('documents/document_details.html', doc=doc)
-
-		except Exception as e:
-			db.session.rollback()
-			flash(f"Помилка при збереженні: {str(e)}", "danger")
-
-	warehouses = db.session.execute(select(Warehouse)).scalars().all()
-	counterparties = db.session.execute(select(Counterparty)).scalars().all()
-	products = db.session.execute(select(Product)).scalars().all()
-
-	return render_template('documents/edit_document.html', doc=doc, warehouses=warehouses,
-						   counterparties=counterparties, products=products)
 
 @docs_bp.route('/documents/<int:doc_id>/generate-next', methods=['POST'])
 def create_from_parent(doc_id):
@@ -164,17 +117,94 @@ def create_from_parent(doc_id):
 				new_doc = service.create_tax_from_outgoing(doc_id)
 			case _:
 				flash("Не вдалося створити документ на підставі поточного", "warning")
-				return render_template('documents/document_details.html', doc=parent_doc)
+				return redirect(url_for('docs.edit_document', doc_id=parent_doc.id))
 
 		db.session.commit()
 		flash(f"Документ {new_doc.number} створено на підставі №{parent_doc.number}", "success")
-		return render_template('documents/document_details.html', doc=new_doc)
+		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
 
 	except Exception as e:
 		db.session.rollback()
 		flash(f"Помилка при створенні: {str(e)}", "danger")
 		# возвращаем старый документ, чтобы страница не "упала"
-		return render_template('documents/document_details.html', doc=parent_doc)
+		return redirect(url_for('docs.edit_document', doc_id=parent_doc.id))
+
+# --- РЕДАКТИРОВАНИЕ / ПРОВЕДЕНИЕ / УДАЛЕНИЕ / ПЕЧАТЬ ---
+
+@docs_bp.route('/documents/<int:doc_id>/edit', methods=['GET', 'POST'])
+def edit_document(doc_id):
+	# Загружаем документ со всеми связями сразу
+	doc = db.session.query(Document).options(
+		joinedload(Document.lines).joinedload(DocumentLine.product),
+		joinedload(Document.counterparty),
+		joinedload(Document.warehouse),
+		joinedload(Document.parent)
+	).get(doc_id)
+
+	if not doc:
+		flash("Документ не знайдено", "danger")
+		return redirect(url_for('docs.all_documents'))
+
+	if request.method == 'POST':
+		# Если документ проведен, запрещаем изменения через POST
+		if doc.is_posted:
+			flash("Не можна редагувати проведений документ!", "warning")
+			# Просто возвращаем ту же форму в режиме просмотра
+		else:
+			try:# Когда получаем дату из формы, она приходит в формате YYYY-MM-DD (без времени).
+				# Объединяем: дата из формы + время из системы
+				doc.date = utils.get_forms_date_and_add_current_time()
+				# Что это даст:
+				# Для пользователя: календарь, где он просто выбирает день.
+				# В базе и в журналах будет видно точное время,
+				# что позволит сортировать документы в правильном порядке их создания
+
+				doc.warehouse_id = request.form.get('warehouse_id') or None
+				doc.counterparty_id = request.form.get('counterparty_id') or None
+				doc.note = request.form.get('note')
+
+				# Очистка старых строк
+				for line in list(doc.lines):
+					db.session.delete(line)
+
+				product_ids = request.form.getlist('product_id[]')
+				quantities = request.form.getlist('quantity[]')
+				prices = request.form.getlist('price[]')
+
+				for p_id, qty, prc in zip(product_ids, quantities, prices):
+					if p_id and qty:
+						new_line = DocumentLine(
+							document_id=doc.id,
+							product_id=int(p_id),
+							quantity=float(qty),
+							price=float(prc)
+						)
+						db.session.add(new_line)
+
+				db.session.commit()
+				flash("Документ успішно оновлено", "success")
+
+			except Exception as e:
+				db.session.rollback()
+				flash(f"Помилка при збереженні: {str(e)}", "danger")
+
+	# Для отображения формы всегда нужны списки выбора
+	warehouses = db.session.execute(select(Warehouse)).scalars().all()
+	counterparties = db.session.execute(select(Counterparty)).scalars().all()
+	products = db.session.execute(select(Product)).scalars().all()
+
+	# Возвращаем единый шаблон
+	response = make_response(render_template('documents/edit_document.html',
+		doc=doc,
+		warehouses=warehouses,
+		counterparties=counterparties,
+		products=products))
+
+	# Устанавливаем URL в истории браузера
+	if request.headers.get('HX-Request'):
+		response.headers['HX-Push-Url'] = f'/documents/{doc_id}/edit'
+
+	return response
 
 @docs_bp.route('/document/post/<int:doc_id>', methods=['POST'])
 def post_document(doc_id):
@@ -203,7 +233,8 @@ def post_document(doc_id):
 		db.session.rollback()
 		flash(f"Помилка проведення: {str(e)}", "danger")
 
-	return render_template('documents/document_details.html', doc=doc)
+	# Перенаправляем на edit_document, чтобы форма обновилась (стала disabled)
+	return redirect(url_for('docs.edit_document', doc_id=doc.id))
 
 @docs_bp.route('/document/unpost/<int:doc_id>', methods=['POST'])
 def unpost_document(doc_id):
@@ -227,49 +258,44 @@ def unpost_document(doc_id):
 		db.session.rollback()
 		flash(f"Помилка скасування: {str(e)}", "danger")
 
-	return render_template('documents/document_details.html', doc=doc)
+	# Перенаправляем на edit_document, чтобы поля снова стали активными
+	return redirect(url_for('docs.edit_document', doc_id=doc.id))
 
 @docs_bp.route('/document/delete/<int:doc_id>', methods=['DELETE', 'POST'])
 def delete_document(doc_id):
 	doc = db.session.get(Document, doc_id)
 	if not doc or doc.is_posted:
-		flash("Неможливо видалити документ", "danger")
-		return render_template('documents/document_details.html', doc=doc)
+		flash("Документ не знайдено", "warning")
+		return redirect(url_for('docs.edit_document', doc_id=doc.id))
 
-	type_to_journal = {
-		DocumentType.ORDER: ('Замовлення клієнтів', 'ORDER'),
-		DocumentType.INVOICE: ('Рахунки-фактури', 'INVOICE'),
-		DocumentType.IN:	('Прибуткові накладні', 'IN'),
-		DocumentType.OUT:	('Видаткові накладні', 'OUT'),
-		DocumentType.TAX:	('Податкові накладні', 'TAX'),
+	if doc.is_posted:
+		flash("Неможливо видалити проведений документ!", "danger")
+		return redirect(url_for('docs.edit_document', doc_id=doc.id))
+
+	# Запоминаем тип, чтобы знать, в какой журнал вернуться после удаления
+	doc_type = doc.doc_type.name
+
+	try:
+		db.session.delete(doc)
+		db.session.commit()
+		flash(f"Документ видалено", "success")
+	except Exception as e:
+		db.session.rollback()
+		flash(f"Помилка при видаленні: {str(e)}", "danger")
+		return redirect(url_for('docs.edit_document', doc_id=doc_id))
+
+	# Определяем, куда вернуться
+	back_routes = {
+		'IN': 'docs.journal_incoming',
+		'OUT': 'docs.journal_outgoing',
+		'ORDER': 'docs.journal_orders',
+		'INVOICE': 'docs.journal_invoices'
 	}
-	title, d_type = type_to_journal.get(doc.doc_type)
+	target_route = back_routes.get(doc_type, 'docs.all_documents')
 
-	db.session.delete(doc)
-	db.session.commit()
-	flash("Документ видалено", "success")
-
-	# После удаления возвращаем журнал (список документов этого типа)
-	stmt = select(Document).where(Document.doc_type == d_type).order_by(Document.date.desc())
-	docs = db.session.execute(stmt).scalars().all()
-	return render_template('documents/journal.html',
-			title=title,
-			docs=docs,
-			type=d_type
-		)
-
-@docs_bp.route('/document/<int:doc_id>')
-def document_detail(doc_id):
-	# Подгружаем связанные данные одним запросом
-	doc = db.session.query(Document).options(
-		joinedload(Document.lines),
-		joinedload(Document.counterparty),
-		joinedload(Document.warehouse)
-	).get(doc_id)
-
-	if not doc:
-		return "Документ не знайдено", 404
-	return render_template('documents/document_details.html', doc=doc)
+	# Без кода 303 HTMX будет пытаться выполнить следующий запрос методом
+	# DELETE по новому адресу, что приведет к ошибке 405 Method Not Allowed
+	return redirect(url_for(target_route), code=303)
 
 @docs_bp.route('/document/<int:doc_id>/print')
 def print_document(doc_id):
@@ -292,8 +318,8 @@ def print_document(doc_id):
 	doc.vat_amount = float(vat_amount_decimal)
 
 	# Сумма прописью
-	doc.total_text = amount_to_ua_text(total_sum_decimal)
-	doc.vat_text = amount_to_ua_text(vat_amount_decimal)
+	doc.total_text = utils.amount_to_ua_text(total_sum_decimal)
+	doc.vat_text = utils.amount_to_ua_text(vat_amount_decimal)
 
 	# Предварительный расчет каждой строки для шаблона
 	for line in doc.lines:

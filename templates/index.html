@@ -1,33 +1,30 @@
 {% extends 'layout.html' %}
-
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-	<div class="d-flex gap-2">
-		<a hx-get="{{ url_for('docs.create_incoming') }}"
-			hx-target="#main-content"
-			hx-push-url="true"
-			class="btn btn-success btn-sm">+ Прибуток
-		</a>
-		<a hx-get="{{ url_for('docs.create_outgoing') }}"
-			hx-target="#main-content"
-			hx-push-url="true"
-			class="btn btn-danger btn-sm">+ Видаток
-		</a>
-		<a hx-get="{{ url_for('docs.create_order') }}"
-			hx-target="#main-content"
-			hx-push-url="true"
-			class="btn btn-primary btn-sm">+ Замовлення
-		</a>
-		<a hx-get="{{ url_for('docs.create_invoice') }}"
-			hx-target="#main-content"
-			hx-push-url="true"
-			class="btn btn-info text-white btn-sm">+ Рахунок
-		</a>
-			<a hx-get="{{ url_for('docs.all_documents') }}"
-			hx-target="#main-content"
-			hx-push-url="true"
-			class="btn btn-info text-white btn-sm">Усі документи
-		</a>
-	</div>
+<div class="d-flex gap-2">
+	<a hx-get="{{ url_for('docs.create_incoming') }}"
+		hx-target="#main-content"
+		hx-push-url="true"
+		class="btn btn-info">+ Прибуток
+	</a>
+	<a hx-get="{{ url_for('docs.create_order') }}"
+		hx-target="#main-content"
+		hx-push-url="true"
+		class="btn btn-info">+ Замовлення
+	</a>
+	<a hx-get="{{ url_for('docs.create_invoice') }}"
+		hx-target="#main-content"
+		hx-push-url="true"
+		class="btn btn-info">+ Рахунок
+	</a>
+	<a hx-get="{{ url_for('docs.create_outgoing') }}"
+		hx-target="#main-content"
+		hx-push-url="true"
+		class="btn btn-info">+ Видаток
+	</a>
+	<a hx-get="{{ url_for('docs.all_documents') }}"
+		hx-target="#main-content"
+		hx-push-url="true"
+		class="btn btn-primary">Усі документи
+	</a>
 </div>
 {% endblock %}

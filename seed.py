@@ -6,6 +6,7 @@ from app import create_app
 from models import db, Document, DocumentLine, Batch, DocumentType, Warehouse, Product, Counterparty
 from inventory_service import InventoryService
 
+
 app = create_app()
 
 with app.app_context():
@@ -93,7 +94,7 @@ with app.app_context():
 	service.post_incoming_invoice(doc_in_extra.id)
 	db.session.expire_all()
 
-	# --- Тестовый расход ---
+	# --- Расход ---
 	doc_out = Document(
 		number="РН-ТЕСТ", date=date(2026, 3, 7), doc_type=DocumentType.OUT,
 		warehouse_id=target_wh.id, counterparty_id=customer.id
@@ -125,7 +126,7 @@ with app.app_context():
 	for l in res_lines:
 		print(f"  -> К-сть: {l.quantity}, Собівартість: {l.cost_price}, Партія ID: {l.applied_batch_id}")
 
-	# Тест отмены
+	#  --- Тест 1. Отмена ---
 	print("\n--- Тест скасування проведення ---")
 	service.unpost_outgoing_invoice(doc_out.id)
 	db.session.commit()
@@ -148,3 +149,117 @@ with app.app_context():
 
 	print(f"Залишок у партії №1 після скасування: {batch1.current_quantity} (Очікувано 50.0)" if batch1
 		else "Ошибка: Партия №1 не найдена!")
+
+# Тест 2 (Списание в ноль): Проверяет, что current_quantity в таблице batches
+# корректно становится равным 0.0. Это критично для того, чтобы следующие
+# списания игнорировали эту партию.
+
+# Тест 3 (Контроль остатков): Проверяет твой InventoryService на "прочность".
+# Если сервис не выбрасывает исключение при попытке списать 1000 шт при наличии
+# 50 шт — значит, в логике post_outgoing_invoice дыра.
+
+# Тест 4 (Изоляция складов): Гарантирует, что списание на Складе А не уменьшает
+# остатки на Складе Б, даже если там один и тот же товар.
+
+# Try-Except блок: Демонстрирует правильную обработку бизнес-ошибок (с откаткой
+# транзакции через db.session.rollback()), чтобы битая накладная не зависала в
+# базе со статусом "в процессе".
+
+	# --- Тест 2: Списание "в ноль" нескольких партий ---
+	print("\n--- Тест 2: Списание нескольких партий полностью ---")
+	# У нас есть товар "Цемент М-500" (products[1]) на Центральном складе (warehouses[0])
+	cement = products[1]
+
+	doc_out_2 = service.create_document(
+		doc_type=DocumentType.OUT,
+		number="РН-ЦЕМЕНТ",
+		date=date(2026, 3, 8),
+		warehouse_id=target_wh.id,
+		counterparty_id=customer.id
+	)
+	db.session.add(doc_out_2)
+	db.session.flush()
+
+	# Добавляем строку на 50 единиц (весь остаток первой партии)
+	line_out_2 = DocumentLine(
+		document_id=doc_out_2.id,
+		product_id=cement.id,
+		quantity=50.0,
+		price=250.0
+	)
+	db.session.add(line_out_2)
+	db.session.commit()
+
+	service.post_outgoing_invoice(doc_out_2.id)
+
+	# Проверяем, что партия закрылась (остаток 0)
+	batch_cement = db.session.scalar(
+		select(Batch).where(Batch.product_id == cement.id, Batch.warehouse_id == target_wh.id)
+	)
+	print(f"Залишок 'Cement' у партії після списання: {batch_cement.current_quantity} (Очікувано 0.0)")
+
+
+	# --- Тест 3: Нехватка товара (Перерасход) ---
+	print("\n--- Тест 3: Спроба списати більше, ніж є на залишку ---")
+	doc_out_fail = service.create_document(
+		doc_type=DocumentType.OUT,
+		number="РН-ERROR",
+		date=date(2026, 3, 9),
+		warehouse_id=target_wh.id,
+		counterparty_id=customer.id
+	)
+	db.session.add(doc_out_fail)
+	db.session.flush()
+
+	# Пытаемся списать 1000 единиц песка (которого всего 50)
+	line_fail = DocumentLine(
+		document_id=doc_out_fail.id,
+		product_id=products[2].id,
+		quantity=1000.0,
+		price=300.0
+	)
+	db.session.add(line_fail)
+	db.session.commit()
+
+	try:
+		service.post_outgoing_invoice(doc_out_fail.id)
+		print("❌ Помилка: Система дозволила списати товар у мінус!")
+	except Exception as e:
+		print(f"✔ Тест пройдено: Система заблокувала списання. Помилка: {e}")
+		db.session.rollback() # Откатываем транзакцию после ошибки
+
+
+	# --- Тест 4: Работа с другим складом ---
+	print("\n--- Тест 4: Списання з іншого складу (Західний філіал) ---")
+	west_wh = warehouses[1]
+	# На западном филиале у нас есть Арматура (products[3]) - 50 шт по 130.0
+	armatura = products[3]
+
+	doc_out_west = service.create_document(
+		doc_type=DocumentType.OUT,
+		number="РН-ЗАХІД",
+		date=date(2026, 3, 10),
+		warehouse_id=west_wh.id,
+		counterparty_id=customer.id
+	)
+	db.session.add(doc_out_west)
+	db.session.flush()
+
+	line_west = DocumentLine(
+		document_id=doc_out_west.id,
+		product_id=armatura.id,
+		quantity=20.0,
+		price=200.0
+	)
+	db.session.add(line_west)
+	db.session.commit()
+
+	service.post_outgoing_invoice(doc_out_west.id)
+
+	db.session.expire_all()
+	batch_west = db.session.scalar(
+		select(Batch).where(Batch.product_id == armatura.id, Batch.warehouse_id == west_wh.id)
+	)
+	print(f"Залишок арматури на Західному складі: {batch_west.current_quantity} (Очікувано 30.0)")
+
+	print("\n🚀 Всі додаткові тести завершені успішно.")

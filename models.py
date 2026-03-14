@@ -14,11 +14,22 @@ from sqlalchemy import (
 db = SQLAlchemy()
 
 class DocumentType(str, enum.Enum):
-	ORDER = "ORDER"		# Замовлення
-	INVOICE = "INVOICE"	# Рахунок-фактура
-	IN = "IN"			# Прибуткова
-	OUT = "OUT"			# Видаткова
-	TAX = "TAX"			# Податкова
+	ORDER = "ORDER"
+	INVOICE = "INVOICE"
+	IN = "IN"
+	OUT = "OUT"
+	TAX = "TAX"
+
+	@property
+	def label(self):
+		labels = {
+			'IN': 'Прихід',
+			'OUT': 'Видаток',
+			'TAX': 'Податкова',
+			'ORDER': 'Замовлення',
+			'INVOICE': 'Рахунок-фактура'
+		}
+		return labels.get(self.value, self.value)
 
 class Counterparty(db.Model):
 	__tablename__ = "counterparties" # Имя таблицы БД
@@ -96,12 +107,14 @@ class Document(db.Model):
 		nullable=False,
 		comment="IN — приходная, OUT — расходная"
 	)
-	date: Mapped[date] = mapped_column(
-		Date, nullable=False
+	date: Mapped[datetime] = mapped_column(
+		DateTime,
+		nullable=False,
+		default=datetime.now
 	)
 	note: Mapped[str | None] = mapped_column(Text)
 
-	# Doc-основание
+	# Документ-основание
 	parent_id: Mapped[int | None] = mapped_column(
 		db.ForeignKey("documents.id"),
 		nullable=True
@@ -209,7 +222,8 @@ class Batch(db.Model):
 		ForeignKey("products.id"), nullable=False, index=True
 	)
 	incoming_line_id: Mapped[int | None] = mapped_column(
-		ForeignKey("document_lines.id"), nullable=False, unique=True # одна строка прихода - одна партия
+		ForeignKey("document_lines.id"),
+		nullable=False, unique=True # одна строка прихода - одна партия
 	)
 	purchase_price: Mapped[float] = mapped_column(
 		Numeric(14, 4), nullable=False,
@@ -253,7 +267,7 @@ class SalesAccumulator(db.Model):
 	__tablename__ = 'sales_accumulator'
 
 	id: Mapped[int] = mapped_column(primary_key=True)
-	date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
+	date: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
 	document_id: Mapped[int] = mapped_column(ForeignKey('documents.id'), nullable=False)
 	product_id: Mapped[int] = mapped_column(ForeignKey('products.id'), nullable=False)
 	counterparty_id: Mapped[int] = mapped_column(ForeignKey('counterparties.id'), nullable=False)

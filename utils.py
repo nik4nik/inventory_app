@@ -1,34 +1,44 @@
+from datetime import datetime
+
+from flask import request
 from num2words import num2words
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
+from inventory_service import InventoryService
 from models import db, Document, DocumentLine
 
 
+def get_forms_date_and_add_current_time():
+	now = datetime.now()
+	# Получаем дату из формы
+	date_str = request.form.get('date')
+	# Добавляем текущее время (часы, минуты, секунды)
+	return datetime.strptime(date_str, '%Y-%m-%d').replace(
+			hour=now.hour, minute=now.minute, second=now.second
+		) if date_str else now
+
 def save_document_from_form(doc_type):
 	"""
-    Створює новий документ у стані чернетки на основі даних із HTTP-запиту.
-    
-    Функція автоматично генерує номер документа, якщо він не вказаний, 
-    зчитує заголовок (дата, контрагент, склад) та додає специфікацію (рядки) товарів.
-    
-    Args:
-        doc_type (DocumentType): Тип документа для створення (IN, OUT, ORDER, INVOICE).
-        
-    Returns:
-        Document: Створений об'єкт документа з прив'язаними рядками.
-    """
+	Створює новий документ у стані чернетки на основі даних із HTTP-запиту.
+
+	Функція автоматично генерує номер документа, якщо він не вказаний,
+	зчитує заголовок (дата, контрагент, склад) та додає специфікацію (рядки) товарів.
+
+	Args:
+		doc_type (DocumentType): Тип документа для створення (IN, OUT, ORDER, INVOICE).
+
+	Returns:
+		Document: Створений об'єкт документа з прив'язаними рядками.
+	"""
 	service = InventoryService(db.session)
 	form_number = request.form.get('number')
 	if not form_number or form_number.strip() == "":
 		form_number = service.generate_next_number(doc_type)
 
-	date_str = request.form.get('date')
-	doc_date = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else datetime.now().date()
-
 	new_doc = Document(
 		number=form_number,
-		date=doc_date,
+		date=get_forms_date_and_add_current_time(),
 		doc_type=doc_type,
 		counterparty_id=request.form.get('counterparty_id') or None,
 		warehouse_id=request.form.get('warehouse_id') or None,

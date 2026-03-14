@@ -1,99 +1,193 @@
 {% extends 'layout.html' %}
 
 {% block content %}
-{# Используем hx-post для сохранения. Результат (детали документа) прилетит в #main-content #}
+{% set is_posted = doc.is_posted %}
+{% set titles = {
+	'IN': 'Прибуткова накладна',
+	'OUT': 'Видаткова накладна',
+	'INVOICE': 'Рахунок-фактура',
+	'ORDER': 'Замовлення'
+} %}
+
 <form hx-post="{{ url_for('docs.edit_document', doc_id=doc.id) }}"
 	  hx-target="#main-content"
 	  hx-push-url="true">
+	
 	<div class="card shadow-sm">
-		<div class="card-header bg-white">
-			<h4 class="mb-0">Редагування: {{ doc.number }}</h4>
+		<div class="card-header d-flex justify-content-between align-items-center bg-white py-3">
+			<h4 class="mb-0">
+				{{ titles.get(doc.doc_type.name, 'Документ') }} № {{ doc.number }}
+				{% if is_posted %}
+					<span class="badge bg-success ms-2" style="font-size: 0.5em;">Проведено</span>
+				{% else %}
+					<span class="badge bg-secondary ms-2" style="font-size: 0.5em;">Чернетка</span>
+				{% endif %}
+			</h4>
+			<div class="d-flex gap-2">
+				<a href="{{ url_for('docs.print_document', doc_id=doc.id) }}" target="_blank" class="btn btn-sm btn-outline-dark">
+					<i class="bi bi-printer"></i> Друк
+				</a>
+			</div>
 		</div>
+
 		<div class="card-body">
-			<div class="row mb-3">
-				<div class="col-md-4">
-					<label class="form-label">Дата</label>
-					<input type="date" name="date" class="form-control" value="{{ doc.date.strftime('%Y-%m-%d') }}" required>
+			{# Основные реквизиты #}
+			<div class="row mb-4">
+				<div class="col-md-3">
+					<label class="form-label small text-muted">Дата</label>
+					<input type="date" name="date" class="form-control" 
+						   value="{{ doc.date.strftime('%Y-%m-%d') }}" 
+						   {% if is_posted %}disabled{% endif %} required>
 				</div>
-				<div class="col-md-4">
-					<label class="form-label">Склад</label>
-					<select name="warehouse_id" class="form-select">
+				<div class="col-md-3">
+					<label class="form-label small text-muted">Склад</label>
+					<select name="warehouse_id" class="form-select" {% if is_posted %}disabled{% endif %}>
 						<option value="">-- Не обрано --</option>
 						{% for wh in warehouses %}
 						<option value="{{ wh.id }}" {% if wh.id == doc.warehouse_id %}selected{% endif %}>{{ wh.name }}</option>
 						{% endfor %}
 					</select>
 				</div>
-				<div class="col-md-4">
-					<label class="form-label">Контрагент</label>
-					<select name="counterparty_id" class="form-select">
+				<div class="col-md-3">
+					<label class="form-label small text-muted">Контрагент</label>
+					<select name="counterparty_id" class="form-select" {% if is_posted %}disabled{% endif %}>
 						<option value="">-- Не обрано --</option>
 						{% for cp in counterparties %}
 						<option value="{{ cp.id }}" {% if cp.id == doc.counterparty_id %}selected{% endif %}>{{ cp.name }}</option>
 						{% endfor %}
 					</select>
 				</div>
+				<div class="col-md-3">
+					{% if doc.parent %}
+					<label class="form-label small text-muted">Підстава</label>
+					<div class="form-control bg-light text-truncate">
+						<a hx-get="{{ url_for('docs.edit_document', doc_id=doc.parent_id) }}" 
+						   hx-target="#main-content" hx-push-url="true" class="text-decoration-none">
+						   <i class="bi bi-link-45deg"></i> {{ doc.parent.number }}
+						</a>
+					</div>
+					{% endif %}
+				</div>
 			</div>
 
 			<hr>
-			<div class="d-flex justify-content-between align-items-center mb-2">
-				<h5 class="mb-0">Товари:</h5>
+			
+			<div class="d-flex justify-content-between align-items-center mb-3">
+				<h5 class="mb-0 text-primary">Товари:</h5>
+				{% if not is_posted %}
 				<button type="button" class="btn btn-outline-secondary btn-sm" onclick="addRow()">
 					<i class="bi bi-plus-circle"></i> Додати товар
 				</button>
+				{% endif %}
 			</div>
 
 			<table class="table table-sm align-middle" id="products-table">
 				<thead class="table-light">
 					<tr>
-						<th style="width: 50%">Товар</th>
-						<th>Кількість</th>
-						<th>Ціна</th>
-						<th style="width: 50px"></th>
+						<th style="width: 45%">Товар</th>
+						<th style="width: 15%">Кількість</th>
+						<th style="width: 15%">Ціна</th>
+						<th style="width: 15%" class="text-end">Сума</th>
+						{% if doc.doc_type.name == 'OUT' %}<th class="text-end small text-muted">FIFO</th>{% endif %}
+						<th style="width: 40px"></th>
 					</tr>
 				</thead>
 				<tbody>
 					{% for line in doc.lines %}
 					<tr>
 						<td>
-							<select name="product_id[]" class="form-select form-select-sm">
+							<select name="product_id[]" class="form-select form-select-sm" {% if is_posted %}disabled{% endif %}>
 								{% for p in products %}
 								<option value="{{ p.id }}" {% if p.id == line.product_id %}selected{% endif %}>{{ p.name }}</option>
 								{% endfor %}
 							</select>
 						</td>
-						<td><input type="number" name="quantity[]" class="form-control form-select-sm" step="0.01" value="{{ line.quantity }}"></td>
-						<td><input type="number" name="price[]" class="form-control form-select-sm" step="0.01" value="{{ line.price }}"></td>
+						<td><input type="number" name="quantity[]" class="form-control form-control-sm" step="0.01" value="{{ line.quantity }}" {% if is_posted %}disabled{% endif %} oninput="calcRow(this)"></td>
+						<td><input type="number" name="price[]" class="form-control form-control-sm" step="0.01" value="{{ line.price }}" {% if is_posted %}disabled{% endif %} oninput="calcRow(this)"></td>
+						<td class="text-end fw-bold row-sum">{{ "%.2f"|format(line.quantity * line.price) }}</td>
+						{% if doc.doc_type.name == 'OUT' %}
+						<td class="text-end text-muted small">{{ "%.2f"|format(line.cost_price or 0) }}</td>
+						{% endif %}
 						<td class="text-center">
-							<button type="button" class="btn btn-link text-danger p-0" onclick="this.closest('tr').remove()">
+							{% if not is_posted %}
+							<button type="button" class="btn btn-link text-danger p-0" onclick="this.closest('tr').remove(); updateFullTotal();">
 								<i class="bi bi-trash"></i>
 							</button>
+							{% endif %}
 						</td>
 					</tr>
 					{% endfor %}
 				</tbody>
+				<tfoot class="table-light">
+					<tr class="fw-bold">
+						<td colspan="3" class="text-end">Всього:</td>
+						<td class="text-end text-primary" id="grand-total">
+							{# Ручной расчет суммы без использования total_price в модели #}
+							{% set total_calc = namespace(value=0) %}
+							{% for line in doc.lines %}
+								{% set total_calc.value = total_calc.value + (line.quantity * line.price) %}
+							{% endfor %}
+							{{ "%.2f"|format(total_calc.value) }}
+						</td>
+						{% if doc.doc_type.name == 'OUT' %}<td></td>{% endif %}
+						<td></td>
+					</tr>
+				</tfoot>
 			</table>
 		</div>
-		<div class="card-footer d-flex justify-content-end gap-2 bg-white">
-			{# Кнопка отмены через hx-get #}
-			<a hx-get="{{ url_for('docs.document_detail', doc_id=doc.id) }}"
-			   hx-target="#main-content"
-			   hx-push-url="true"
-			   class="btn btn-light border"
-			   style="cursor:pointer;">Відміна</a>
 
-			<button type="submit" class="btn btn-primary">
-				<i class="bi bi-save"></i> Зберегти зміни
-			</button>
+		<div class="card-footer d-flex justify-content-between bg-white py-3">
+			<div class="d-flex gap-2">
+				{# Кнопки проведения/отмены #}
+				{% if is_posted %}
+					<button type="button" hx-post="{{ url_for('docs.unpost_document', doc_id=doc.id) }}"
+							hx-target="#main-content" class="btn btn-warning">
+						<i class="bi bi-arrow-counterclockwise"></i> Скасувати проведення
+					</button>
+				{% else %}
+					<button type="submit" class="btn btn-primary">
+						<i class="bi bi-save"></i> Зберегти
+					</button>
+					<button type="button" hx-post="{{ url_for('docs.post_document', doc_id=doc.id) }}"
+							hx-target="#main-content" class="btn btn-success">
+						<i class="bi bi-check-circle"></i> Провести
+					</button>
+				{% endif %}
+
+				{# Создание на основании #}
+				{% if doc.doc_type.name in ['ORDER', 'INVOICE'] %}
+					<button type="button" hx-post="{{ url_for('docs.create_from_parent', doc_id=doc.id) }}"
+							hx-target="#main-content" hx-push-url="true" class="btn btn-outline-primary">
+						<i class="bi bi-files"></i> {% if doc.doc_type.name == 'ORDER' %}Рахунок{% else %}Видаток{% endif %}
+					</button>
+				{% endif %}
+			</div>
+
+			<div class="d-flex gap-2">
+				{% if not is_posted %}
+				<button type="button" hx-delete="{{ url_for('docs.delete_document', doc_id=doc.id) }}"
+						hx-target="#main-content" hx-confirm="Видалити цей документ?" class="btn btn-outline-danger">
+					<i class="bi bi-trash"></i>
+				</button>
+				{% endif %}
+
+				{# --- ЛОГИКА КНОПКИ ЗАКРЫТЬ --- #}
+				{% set back_url = url_for('docs.journal_incoming') %} {# Дефолт #}
+				{% if doc.doc_type.name == 'OUT' %}{% set back_url = url_for('docs.journal_outgoing') %}
+				{% elif doc.doc_type.name == 'ORDER' %}{% set back_url = url_for('docs.journal_orders') %}
+				{% elif doc.doc_type.name == 'INVOICE' %}{% set back_url = url_for('docs.journal_invoices') %}
+				{% endif %}
+
+				<a hx-get="{{ back_url }}" 
+				   hx-target="#main-content" 
+				   hx-push-url="true" 
+				   class="btn btn-light border">Закрити</a>
+			</div>
 		</div>
 	</div>
 </form>
 
 <script>
-/**
- * Функция добавления строки.
- * Используем шаблонную строку для чистоты кода.
- */
 function addRow() {
 	const table = document.getElementById('products-table').getElementsByTagName('tbody')[0];
 	const row = table.insertRow();
@@ -103,14 +197,32 @@ function addRow() {
 				{% for p in products %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
 			</select>
 		</td>
-		<td><input type="number" name="quantity[]" class="form-control form-select-sm" step="0.01" value="1"></td>
-		<td><input type="number" name="price[]" class="form-control form-select-sm" step="0.01" value="0"></td>
+		<td><input type="number" name="quantity[]" class="form-control form-control-sm" step="0.01" value="1" oninput="calcRow(this)"></td>
+		<td><input type="number" name="price[]" class="form-control form-control-sm" step="0.01" value="0" oninput="calcRow(this)"></td>
+		<td class="text-end fw-bold row-sum">0.00</td>
+		{% if doc.doc_type.name == 'OUT' %}<td></td>{% endif %}
 		<td class="text-center">
-			<button type="button" class="btn btn-link text-danger p-0" onclick="this.closest('tr').remove()">
+			<button type="button" class="btn btn-link text-danger p-0" onclick="this.closest('tr').remove(); updateFullTotal();">
 				<i class="bi bi-trash"></i>
 			</button>
 		</td>
 	`;
+}
+
+function calcRow(input) {
+	const row = input.closest('tr');
+	const q = parseFloat(row.querySelector('[name="quantity[]"]').value) || 0;
+	const p = parseFloat(row.querySelector('[name="price[]"]').value) || 0;
+	row.querySelector('.row-sum').innerText = (q * p).toFixed(2);
+	updateFullTotal();
+}
+
+function updateFullTotal() {
+	let total = 0;
+	document.querySelectorAll('.row-sum').forEach(el => {
+		total += parseFloat(el.innerText) || 0;
+	});
+	document.getElementById('grand-total').innerText = total.toFixed(2);
 }
 </script>
 {% endblock %}
