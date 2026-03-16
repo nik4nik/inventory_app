@@ -228,7 +228,7 @@ class InventoryService:
 		Тільки змінює статус проведеності.
 		"""
 		doc = self._session.get(Document, document_id)
-		self._check_not_posted(doc) # Проверка, что документ еще не проведен
+		self._check_not_posted(doc) # Проверка, что документ не проведен
 
 		doc.is_posted = True
 		self._session.commit()

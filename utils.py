@@ -13,7 +13,7 @@ def get_forms_date_and_add_current_time():
 	now = datetime.now()
 	# Получаем дату из формы
 	date_str = request.form.get('date')
-	# Добавляем текущее время (часы, минуты, секунды)
+	# Добавляем текущее время
 	return datetime.strptime(date_str, '%Y-%m-%d').replace(
 			hour=now.hour, minute=now.minute, second=now.second
 		) if date_str else now
@@ -95,10 +95,10 @@ def amount_to_ua_text(amount):
 	units = int(amount)
 	cents = int(round((amount - units) * 100))
 
-	# Генерируем текст для гривен
+	# Генерируем текст для гривень
 	words = num2words(units, lang='uk')
 
-	# Логика окончаний для слова "гривня"
+	# Окончания слова "гривня"
 	last_digit = units % 10
 	last_two_digits = units % 100
 

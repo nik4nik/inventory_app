@@ -33,7 +33,7 @@ class DocumentType(str, enum.Enum):
 		return labels.get(self.value, self.value)
 
 class Counterparty(db.Model):
-	__tablename__ = "counterparties" # Имя таблицы БД
+	__tablename__ = "counterparties" # DB table name
 	id: Mapped[int] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(200), nullable=False)
 	is_customer: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -49,12 +49,7 @@ class Warehouse(db.Model):
 	batches: Mapped[list[Batch]] = relationship(back_populates="warehouse")
 
 class Product(db.Model):
-	"""
-	Справочник товаров и услуг.
-
-	Если is_service=True — позиция является услугой:
-	партии Batch для неё не создаются, FIFO не применяется
-	"""
+	""" Справочник товаров и услуг """
 
 	__tablename__ = "products"
 	id: Mapped[int] = mapped_column(primary_key=True)
@@ -121,7 +116,7 @@ class Document(db.Model):
 		nullable=True
 	)
 	parent: Mapped["Document | None"] = relationship("Document", remote_side="Document.id")
-	# Отношение для проверки наличия дочерних документов
+	# Нужно для проверки наличия дочерних документов
 	children: Mapped[list["Document"]] = relationship(
 		"Document",
 		back_populates="parent"
@@ -151,9 +146,9 @@ class Document(db.Model):
 
 class DocumentLine(db.Model):
 	"""
-	Строка накладной: товар, количество, цена.
+	Строка табличной части: товар, количество, цена.
 
-	Для документа типа IN каждая строка является источником одной партии Batch
+	Для документа типа IN каждая строка есть источник одной партии Batch
 	(связь 1:1 через Batch.incoming_line_id)
 	"""
 
@@ -180,7 +175,7 @@ class DocumentLine(db.Model):
 			f"qty={self.quantity} price={self.price}>"
 		)
 
-# Регистры
+# --- Регистры ---
 
 class Batch(db.Model):
 	"""
@@ -225,7 +220,7 @@ class Batch(db.Model):
 	incoming_line: Mapped[DocumentLine] = relationship(
 		"DocumentLine", foreign_keys=[incoming_line_id]
 	)
-	# Движения по этой партии в регистре продаж
+	# Движения партии в регистре продаж
 	sales_movements: Mapped[list["SalesAccumulator"]] = relationship(
 		"SalesAccumulator", back_populates="batch"
 	)

@@ -64,7 +64,7 @@ with app.app_context():
 			db.session.add(line)
 
 		db.session.commit()
-		# Проводим, чтобы появились партии (Batch)
+		# Проводим
 		service.post_incoming_invoice(doc_in.id)
 
 	# После всех приходов сбрасываем состояние объектов в памяти
@@ -75,7 +75,7 @@ with app.app_context():
 	target_product = products[0] # Цегла червона (ID=1)
 	target_wh = warehouses[0] # Центральний склад (ID=1)
 
-	# Создаем ВТОРУЮ партию того же товара (дороже)
+	# Создаем ВТОРУЮ партию того же товара
 	doc_in_extra = Document(
 		number="ПН-EXTRA", date=date(2026, 3, 2), doc_type=DocumentType.IN,
 		warehouse_id=target_wh.id, counterparty_id=supplier.id
@@ -116,8 +116,8 @@ with app.app_context():
 	# Теперь партии есть в базе (is_posted=True у приходов)
 	service.post_outgoing_invoice(doc_out.id)
 
-	# Проверка расщепления (FIFO)
-	db.session.expire_all() # Принудительно обновляем данные из БД
+	# Проверка FIFO
+	db.session.expire_all() # Обновляем данные из БД
 	res_lines = db.session.execute(
 		select(DocumentLine).where(DocumentLine.document_id == doc_out.id)
 	).scalars().all()
@@ -126,7 +126,7 @@ with app.app_context():
 	for l in res_lines:
 		print(f"  -> Товар: {l.product.name}, К-сть: {l.quantity}, Ціна: {l.price}")
 
-	#  --- Тест 1. Отмена ---
+	#  Тест 1. Отмена
 	print("\n--- Тест скасування проведення ---")
 	service.unpost_outgoing_invoice(doc_out.id)
 	db.session.commit()
@@ -151,21 +151,17 @@ with app.app_context():
 		else "Ошибка: Партия №1 не найдена!")
 
 # Тест 2 (Списание в ноль): Проверяет, что current_quantity в таблице batches
-# корректно становится равным 0.0. Это критично для того, чтобы следующие
-# списания игнорировали эту партию.
+# становится равным 0.0. Это важно для того, чтобы следующие списания
+# пропускали эту партию.
 
-# Тест 3 (Контроль остатков): Проверяет твой InventoryService на "прочность".
-# Если сервис не выбрасывает исключение при попытке списать 1000 шт при наличии
-# 50 шт — значит, в логике post_outgoing_invoice дыра.
+# Тест 3 (Контроль остатков):
+# Если сервис не вызовет исключение при попытке списать 1000 шт при наличии
+# 50 шт — значит, в post_outgoing_invoice ошибка.
 
-# Тест 4 (Изоляция складов): Гарантирует, что списание на Складе А не уменьшает
+# Тест 4 (Изоляция складов): Проверка что списание на Складе А не уменьшает
 # остатки на Складе Б, даже если там один и тот же товар.
 
-# Try-Except блок: Демонстрирует правильную обработку бизнес-ошибок (с откаткой
-# транзакции через db.session.rollback()), чтобы битая накладная не зависала в
-# базе со статусом "в процессе".
-
-	# --- Тест 2: Списание "в ноль" нескольких партий ---
+	# Тест 2: Списание "в ноль" нескольких партий
 	print("\n--- Тест 2: Списание нескольких партий полностью ---")
 	# У нас есть товар "Цемент М-500" (products[1]) на Центральном складе (warehouses[0])
 	cement = products[1]
@@ -199,7 +195,7 @@ with app.app_context():
 	print(f"Залишок 'Cement' у партії після списання: {batch_cement.current_quantity} (Очікувано 0.0)")
 
 
-	# --- Тест 3: Нехватка товара (Перерасход) ---
+	# Тест 3: Нехватка товара (Перерасход)
 	print("\n--- Тест 3: Спроба списати більше, ніж є на залишку ---")
 	doc_out_fail = service.create_document(
 		doc_type=DocumentType.OUT,
@@ -226,13 +222,13 @@ with app.app_context():
 		print("❌ Помилка: Система дозволила списати товар у мінус!")
 	except Exception as e:
 		print(f"✔ Тест пройдено: Система заблокувала списання. Помилка: {e}")
-		db.session.rollback() # Откатываем транзакцию после ошибки
+		db.session.rollback() # Откат транзакции после ошибки
 
 
-	# --- Тест 4: Работа с другим складом ---
+	# Тест 4: Другой склад
 	print("\n--- Тест 4: Списання з іншого складу (Західний філіал) ---")
 	west_wh = warehouses[1]
-	# На западном филиале у нас есть Арматура (products[3]) - 50 шт по 130.0
+	# На западном филиале есть Арматура 50 шт по 130
 	armatura = products[3]
 
 	doc_out_west = service.create_document(

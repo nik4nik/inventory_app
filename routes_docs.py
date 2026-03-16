@@ -206,8 +206,7 @@ def edit_document(doc_id):
 			try:# Когда получаем дату из формы, она приходит в формате YYYY-MM-DD (без времени).
 				# Объединяем: дата из формы + время из системы
 				doc.date = utils.get_forms_date_and_add_current_time()
-				# Что это даст:
-				# Для пользователя: календарь, где он просто выбирает день.
+				# Пользователь просто выбирает день.
 				# В базе и в журналах будет видно точное время,
 				# что позволит сортировать документы в правильном порядке их создания
 
@@ -340,7 +339,7 @@ def delete_document(doc_id):
 		flash(f"Помилка при видаленні: {str(e)}", "danger")
 		return redirect(url_for('docs.edit_document', doc_id=doc_id))
 
-	# Определяем, куда вернуться
+	# Определим, куда вернуться
 	back_routes = {
 		'IN': 'docs.journal_incoming',
 		'OUT': 'docs.journal_outgoing',

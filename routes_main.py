@@ -30,12 +30,12 @@ def report_remainings():
 		.where(and_(
 			Document.date <= target_date,
 			Document.is_posted == True,
-			Document.doc_type == DocumentType.OUT  # Учитываем только расходные накладные
+			Document.doc_type == DocumentType.OUT  # только расходные накладные
 		))
 		.group_by(DocumentLine.product_id, Document.warehouse_id)
 	).subquery()
 
-	# Берем все приходы (партии) и сопоставляем с общим расходом
+	# Берем все приходы и сопоставляем с общим расходом
 	stmt = (
 		select(
 			Warehouse.name.label('wh_name'),
@@ -67,7 +67,7 @@ def report_remainings():
 	report_data = {}
 	grand_total = 0
 
-	# словарь для отслеживания распределения общего расхода по партиям
+	# словарь для распределения общего расхода по партиям
 	consumption_tracker = {}
 
 	for row in results:
@@ -110,7 +110,7 @@ def report_sales():
 	start_date_str = request.args.get('start_date')
 	end_date_str = request.args.get('end_date')
 
-	# По умолчанию — текущий месяц
+	# текущий месяц
 	today = datetime.now().date()
 	start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else today.replace(day=1)
 	end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else today
