@@ -1,30 +1,17 @@
-{% extends 'layout.html' %}
+{% extends 'base.html' if not request.headers.get('HX-Request') else 'base_ajax.html' %}
 {% block content %}
 <div class="d-flex gap-2">
 	<a hx-get="{{ url_for('docs.create_incoming') }}"
-		hx-target="#main-content"
-		hx-push-url="true"
-		class="btn btn-info">+ Прибуток
+		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Прибуток
 	</a>
 	<a hx-get="{{ url_for('docs.create_order') }}"
-		hx-target="#main-content"
-		hx-push-url="true"
-		class="btn btn-info">+ Замовлення
+		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Замовлення
 	</a>
 	<a hx-get="{{ url_for('docs.create_invoice') }}"
-		hx-target="#main-content"
-		hx-push-url="true"
-		class="btn btn-info">+ Рахунок
+		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Рахунок
 	</a>
 	<a hx-get="{{ url_for('docs.create_outgoing') }}"
-		hx-target="#main-content"
-		hx-push-url="true"
-		class="btn btn-info">+ Видаток
-	</a>
-	<a hx-get="{{ url_for('docs.all_documents') }}"
-		hx-target="#main-content"
-		hx-push-url="true"
-		class="btn btn-primary">Усі документи
+		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Видаток
 	</a>
 </div>
 {% endblock %}

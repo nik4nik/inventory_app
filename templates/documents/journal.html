@@ -1,4 +1,4 @@
-{% extends 'layout.html' %}
+{% extends 'base.html' if not request.headers.get('HX-Request') else 'base_ajax.html' %}
 
 {% block content %}
 {# Определение параметров #}

@@ -40,6 +40,7 @@ def save_document_from_form(doc_type):
 		number=form_number,
 		date=get_forms_date_and_add_current_time(),
 		doc_type=doc_type,
+		parent_id = request.form.get('parent_id'),
 		counterparty_id=request.form.get('counterparty_id') or None,
 		warehouse_id=request.form.get('warehouse_id') or None,
 		is_posted=False

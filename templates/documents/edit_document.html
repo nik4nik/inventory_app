@@ -1,4 +1,4 @@
-{% extends 'layout.html' %}
+{% extends 'base.html' if not request.headers.get('HX-Request') else 'base_ajax.html' %}
 
 {% block content %}
 {% set is_posted = doc.is_posted %}
@@ -6,17 +6,36 @@
 	'IN': 'Прибуткова накладна',
 	'OUT': 'Видаткова накладна',
 	'INVOICE': 'Рахунок-фактура',
-	'ORDER': 'Замовлення'
+	'ORDER': 'Замовлення',
+	'TAX': 'Податкова накладна'
 } %}
 
-<form hx-post="{{ url_for('docs.edit_document', doc_id=doc.id) }}"
+<form hx-post="	{% if doc.id %}
+					{{ url_for('docs.edit_document', doc_id=doc.id) }}
+				{% else %}
+					{{ url_for('docs.save_new_document') }}
+				{% endif %}"
 	  hx-target="#main-content"
 	  hx-push-url="true">
-	
+
+	{# Передаем тип документа и ID родителя для нового документа #}
+	{% if not doc.id %}
+		<input type="hidden" name="doc_type" value="{{ doc.doc_type.name }}">
+		{% if doc.parent_id %}
+			<input type="hidden" name="parent_id" value="{{ doc.parent_id }}">
+		{% endif %}
+	{% endif %}
+
 	<div class="card shadow-sm">
 		<div class="card-header d-flex justify-content-between align-items-center bg-white py-3">
 			<h4 class="mb-0">
-				{{ titles.get(doc.doc_type.name, 'Документ') }} № {{ doc.number }}
+				{{ titles.get(doc.doc_type.name, 'Документ') }}
+				{% if doc.number %}
+					№ {{ doc.number }}
+				{% else %}
+					(Новий)
+				{% endif %}
+
 				{% if is_posted %}
 					<span class="badge bg-success ms-2" style="font-size: 0.5em;">Проведено</span>
 				{% else %}
@@ -24,9 +43,11 @@
 				{% endif %}
 			</h4>
 			<div class="d-flex gap-2">
+				{% if doc.id %}
 				<a href="{{ url_for('docs.print_document', doc_id=doc.id) }}" target="_blank" class="btn btn-sm btn-outline-dark">
 					<i class="bi bi-printer"></i> Друк
 				</a>
+				{% endif %}
 			</div>
 		</div>
 
@@ -35,19 +56,31 @@
 			<div class="row mb-4">
 				<div class="col-md-3">
 					<label class="form-label small text-muted">Дата</label>
-					<input type="date" name="date" class="form-control" 
-						   value="{{ doc.date.strftime('%Y-%m-%d') }}" 
+					<input type="date" name="date" class="form-control"
+						   value="{{ doc.date.strftime('%Y-%m-%d') }}"
 						   {% if is_posted %}disabled{% endif %} required>
 				</div>
+				{# Показуємо склад лише для прибуткових (IN) та видаткових (OUT) накладних #}
+				{% if doc.doc_type.name in ['IN', 'OUT'] %}
 				<div class="col-md-3">
 					<label class="form-label small text-muted">Склад</label>
-					<select name="warehouse_id" class="form-select" {% if is_posted %}disabled{% endif %}>
+					<select name="warehouse_id" class="form-select"
+							{% if is_posted %}disabled{% endif %}>
+							{# Склад обов'язковий тільки для Накладних (IN/OUT) #}
+							{% if doc.doc_type.name in ['IN', 'OUT'] %}required{% endif %}>
+
 						<option value="">-- Не обрано --</option>
 						{% for wh in warehouses %}
-						<option value="{{ wh.id }}" {% if wh.id == doc.warehouse_id %}selected{% endif %}>{{ wh.name }}</option>
+						<option value="{{ wh.id }}" {% if wh.id == doc.warehouse_id %}selected{% endif %}>
+							{{ wh.name }}
+						</option>
 						{% endfor %}
 					</select>
 				</div>
+				{% else %}
+					{# Для ORDER, INVOICE, TAX передаємо пусте значення, щоб форма не шукала warehouse_id #}
+					<input type="hidden" name="warehouse_id" value="">
+				{% endif %}
 				<div class="col-md-3">
 					<label class="form-label small text-muted">Контрагент</label>
 					<select name="counterparty_id" class="form-select" {% if is_posted %}disabled{% endif %}>
@@ -61,9 +94,11 @@
 					{% if doc.parent %}
 					<label class="form-label small text-muted">Підстава</label>
 					<div class="form-control bg-light text-truncate">
-						<a hx-get="{{ url_for('docs.edit_document', doc_id=doc.parent_id) }}" 
+						<a hx-get="{{ url_for('docs.edit_document', doc_id=doc.parent_id) }}"
 						   hx-target="#main-content" hx-push-url="true" class="text-decoration-none">
 						   <i class="bi bi-link-45deg"></i> {{ doc.parent.number }}
+						   {# Если это новый док, parent.number может быть недоступен через связь, лучше вывести parent_id или передать номер отдельно #}
+						   {{ doc.parent.number if doc.parent else doc.parent_id }}
 						</a>
 					</div>
 					{% endif %}
@@ -71,7 +106,7 @@
 			</div>
 
 			<hr>
-			
+
 			<div class="d-flex justify-content-between align-items-center mb-3">
 				<h5 class="mb-0 text-primary">Товари:</h5>
 				{% if not is_posted %}
@@ -102,7 +137,13 @@
 								{% endfor %}
 							</select>
 						</td>
-						<td><input type="number" name="quantity[]" class="form-control form-control-sm" step="0.01" value="{{ line.quantity }}" {% if is_posted %}disabled{% endif %} oninput="calcRow(this)"></td>
+						<td><input type="number"
+							name="quantity[]"
+							class="form-control form-control-sm"
+							step="1"
+							value="{{ line.quantity }}" {% if is_posted %}disabled{% endif %}
+							oninput="calcRow(this)">
+						</td>
 						<td><input type="number" name="price[]" class="form-control form-control-sm" step="0.01" value="{{ line.price }}" {% if is_posted %}disabled{% endif %} oninput="calcRow(this)"></td>
 						<td class="text-end fw-bold row-sum">{{ "%.2f"|format(line.quantity * line.price) }}</td>
 						{% if doc.doc_type.name == 'OUT' %}
@@ -138,49 +179,80 @@
 
 		<div class="card-footer d-flex justify-content-between bg-white py-3">
 			<div class="d-flex gap-2">
-				{# Кнопки проведения/отмены #}
-				{% if is_posted %}
-					<button type="button" hx-post="{{ url_for('docs.unpost_document', doc_id=doc.id) }}"
-							hx-target="#main-content" class="btn btn-warning">
-						<i class="bi bi-arrow-counterclockwise"></i> Скасувати проведення
-					</button>
+				{% if doc.id %}
+					{# Логика для существующего документа #}
+					{% if is_posted %}
+						<button type="button" hx-post="{{ url_for('docs.unpost_document', doc_id=doc.id) }}"
+								hx-target="#main-content" class="btn btn-warning">
+							<i class="bi bi-arrow-counterclockwise"></i> Скасувати проведення
+						</button>
+					{% else %}
+						<button type="submit" class="btn btn-primary">
+							<i class="bi bi-save"></i> Зберегти
+						</button>
+						<button type="button" hx-post="{{ url_for('docs.post_document', doc_id=doc.id) }}"
+								hx-target="#main-content" class="btn btn-success">
+							<i class="bi bi-check-circle"></i> Провести
+						</button>
+					{% endif %}
 				{% else %}
+					{# Логика для НОВОГО документа (на основании) #}
 					<button type="submit" class="btn btn-primary">
-						<i class="bi bi-save"></i> Зберегти
+						<i class="bi bi-save"></i> Створити та зберегти
 					</button>
-					<button type="button" hx-post="{{ url_for('docs.post_document', doc_id=doc.id) }}"
-							hx-target="#main-content" class="btn btn-success">
-						<i class="bi bi-check-circle"></i> Провести
-					</button>
+					<a hx-get="{{ url_for('docs.edit_document', doc_id=parent_id) if parent_id else url_for('docs.all_documents') }}"
+					   hx-target="#main-content"
+					   hx-push-url="true"
+					   class="btn btn-outline-secondary">
+						<i class="bi bi-x-circle"></i> Скасувати створення
+					</a>
 				{% endif %}
 
-				{# Создание на основании #}
-				{% if doc.doc_type.name in ['ORDER', 'INVOICE'] %}
-					<button type="button" hx-post="{{ url_for('docs.create_from_parent', doc_id=doc.id) }}"
-							hx-target="#main-content" hx-push-url="true" class="btn btn-outline-primary">
-						<i class="bi bi-files"></i> {% if doc.doc_type.name == 'ORDER' %}Рахунок{% else %}Видаток{% endif %}
-					</button>
+				{% if doc.id and doc.doc_type.name in ['ORDER', 'INVOICE', 'OUT'] %}
+					{# Проверяем, есть ли уже созданный документ на основании этого #}
+					{% set child = doc.children | selectattr("doc_type.name", "equalto",
+						"INVOICE" if doc.doc_type.name == "ORDER" else
+						"TAX" if doc.doc_type.name == "OUT" else "OUT"
+					) | first %}
+
+					{% if child %}
+						{# Если документ уже есть — даем ссылку на него #}
+						<a href="{{ url_for('docs.edit_document', doc_id=child.id) }}" class="btn btn-outline-success">
+							<i class="bi bi-link-45deg"></i>
+							Перейти до {% if doc.doc_type.name == 'ORDER' %}Рахунку{% elif doc.doc_type.name == 'OUT' %}Податкової{% else %}Видатку{% endif %}
+						</a>
+					{% else %}
+						{# Если нет — кнопка создания #}
+						<button type="button" hx-post="{{ url_for('docs.create_from_parent', doc_id=doc.id) }}"
+								class="btn btn-outline-primary">
+							<i class="bi bi-files"></i>
+							{% if doc.doc_type.name == 'ORDER' %} Створити Рахунок
+							{% elif doc.doc_type.name == 'OUT' %} Створити Податкову
+							{% else %} Створити Видаток {% endif %}
+						</button>
+					{% endif %}
 				{% endif %}
 			</div>
 
 			<div class="d-flex gap-2">
-				{% if not is_posted %}
+				{% if doc.id and not is_posted %}
 				<button type="button" hx-delete="{{ url_for('docs.delete_document', doc_id=doc.id) }}"
 						hx-target="#main-content" hx-confirm="Видалити цей документ?" class="btn btn-outline-danger">
 					<i class="bi bi-trash"></i>
 				</button>
 				{% endif %}
 
-				{# --- ЛОГИКА КНОПКИ ЗАКРЫТЬ --- #}
-				{% set back_url = url_for('docs.journal_incoming') %} {# Дефолт #}
-				{% if doc.doc_type.name == 'OUT' %}{% set back_url = url_for('docs.journal_outgoing') %}
-				{% elif doc.doc_type.name == 'ORDER' %}{% set back_url = url_for('docs.journal_orders') %}
-				{% elif doc.doc_type.name == 'INVOICE' %}{% set back_url = url_for('docs.journal_invoices') %}
-				{% endif %}
+				{% set back_url = url_for({
+					'IN': 'docs.journal_incoming',
+					'OUT': 'docs.journal_outgoing',
+					'ORDER': 'docs.journal_orders',
+					'INVOICE': 'docs.journal_invoices',
+					'TAX': 'docs.journal_tax_invoices'
+				}.get(doc.doc_type.name, 'docs.all_documents')) %}
 
-				<a hx-get="{{ back_url }}" 
-				   hx-target="#main-content" 
-				   hx-push-url="true" 
+				<a hx-get="{{ back_url }}"
+				   hx-target="#main-content"
+				   hx-push-url="true"
 				   class="btn btn-light border">Закрити</a>
 			</div>
 		</div>
@@ -197,7 +269,7 @@ function addRow() {
 				{% for p in products %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
 			</select>
 		</td>
-		<td><input type="number" name="quantity[]" class="form-control form-control-sm" step="0.01" value="1" oninput="calcRow(this)"></td>
+		<td><input type="number" name="quantity[]" step="1" class="form-control form-control-sm" step="0.01" value="1" oninput="calcRow(this)"></td>
 		<td><input type="number" name="price[]" class="form-control form-control-sm" step="0.01" value="0" oninput="calcRow(this)"></td>
 		<td class="text-end fw-bold row-sum">0.00</td>
 		{% if doc.doc_type.name == 'OUT' %}<td></td>{% endif %}

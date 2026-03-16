@@ -1,4 +1,4 @@
-{% extends 'layout.html' %}
+{% extends 'base.html' if not request.headers.get('HX-Request') else 'base_ajax.html' %}
 
 {% block content %}
 <div class="card shadow mb-4">
@@ -19,7 +19,7 @@
 			</div>
 			<div class="col-md-4 d-flex align-items-end">
 				<button type="submit" class="btn btn-primary w-100">
-					<i class="bi bi-filter"></i> Сформувати звіт
+					<i class="bi bi-filter"></i> Сформувати
 				</button>
 			</div>
 		</form>

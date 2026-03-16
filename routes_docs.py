@@ -10,6 +10,7 @@ from models import db, Counterparty, Product, Warehouse, Document, DocumentLine,
 from inventory_service import InventoryService, InsufficientStockError
 import utils
 
+
 docs_bp = Blueprint('docs', __name__)
 
 # --- ЖУРНАЛЫ ДОКУМЕНТОВ ---
@@ -40,75 +41,119 @@ def journal_invoices():
 	docs = utils.get_journal_docs(DocumentType.INVOICE)
 	return render_template('documents/journal.html', docs=docs, title="Рахунки-фактури", type='INVOICE')
 
+@docs_bp.route('/journals/tax_invoices')
+def journal_tax_invoices():
+	docs = utils.get_journal_docs(DocumentType.TAX)
+	return render_template('documents/journal.html', docs=docs, title="Податкові накладні", type='TAX')
+
 # --- СОЗДАНИЕ / СОЗДАНИЕ НА ОСНОВАНИИ ---
 
-@docs_bp.route('/order/new', methods=['GET', 'POST'])
+# GET роуты: вернуть пустую страницу с формой для ручного заполнения
+@docs_bp.route('/order/new', methods=['GET'])
 def create_order():
-	if request.method == 'POST':
-		new_doc = utils.save_document_from_form(DocumentType.ORDER)
-		db.session.commit()
-		flash("Замовлення збережено", "success")
-		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
+	new_doc = Document(
+		doc_type=DocumentType.ORDER,
+		date=datetime.now(),
+		lines=[]
+	)
 
-	return render_template('documents/create_order.html',
-			counterparties = Counterparty.query.all(),
-			products = Product.query.all())
+	return render_template('documents/edit_document.html',
+		doc=new_doc,
+		counterparties=Counterparty.query.all(),
+		products=Product.query.all()
+	)
 
-@docs_bp.route('/invoice/new', methods=['GET', 'POST'])
+@docs_bp.route('/invoice/new', methods=['GET'])
 def create_invoice():
-	if request.method == 'POST':
-		new_doc = utils.save_document_from_form(DocumentType.INVOICE)
-		db.session.commit()
-		flash("Рахунок збережено", "success")
-		return redirect(url_for('docs.edit_document.html', doc_id=new_doc.id))
+	new_doc = Document(
+		doc_type=DocumentType.INVOICE,
+		date=datetime.now(),
+		lines=[]
+	)
 
-	return render_template('documents/create_invoice.html',
-			counterparties = Counterparty.query.all(),
-			products = Product.query.all())
+	return render_template('documents/edit_document.html',
+		doc=new_doc,
+		counterparties = Counterparty.query.all(),
+		products = Product.query.all()
+	)
 
-@docs_bp.route('/incoming/new', methods=['GET', 'POST'])
+@docs_bp.route('/incoming/new', methods=['GET'])
 def create_incoming():
-	if request.method == 'POST':
-		new_doc = utils.save_document_from_form('IN')
-		db.session.commit()
-		# Возвращаем шаблон деталей, чтобы HTMX подставил его в центр экрана
-		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
+	new_doc = Document(
+		doc_type=DocumentType.IN,
+		date=datetime.now(),
+		lines=[]
+	)
 
-	# GET запрос: показываем пустую форму
 	warehouses = Warehouse.query.all()
 	counterparties = Counterparty.query.all()
 	products = Product.query.all()
-	return render_template('documents/create_incoming.html',
-			warehouses=warehouses,
-			counterparties=counterparties,
-			products=products)
+	return render_template('documents/edit_document.html',
+		doc=new_doc,
+		warehouses=warehouses,
+		counterparties=counterparties,
+		products=products
+	)
 
-@docs_bp.route('/outgoing/new', methods=['GET', 'POST'])
+@docs_bp.route('/outgoing/new', methods=['GET'])
 def create_outgoing():
-	if request.method == 'POST':
-		new_doc = utils.save_document_from_form('OUT')
-		db.session.commit()
-		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
+	new_doc = Document(
+		doc_type=DocumentType.IN,
+		date=datetime.now(),
+		lines=[]
+	)
 
 	warehouses = Warehouse.query.all()
 	counterparties = Counterparty.query.all()
 	products = Product.query.all()
-	return render_template('documents/create_outgoing.html',
-			warehouses=warehouses,
-			counterparties=counterparties,
-			products=products)
+	return render_template('documents/edit_document.html',
+		doc=new_doc,
+		warehouses=warehouses,
+		counterparties=counterparties,
+		products=products
+	)
+
+# POST общий роут: для данных от пустых форм и от форм «на основании»
+@docs_bp.route('/documents/save-new', methods=['POST'])
+def save_new_document():
+	doc_type_name = request.form.get('doc_type')
+	try:
+		doc_type = DocumentType[doc_type_name]
+	except (KeyError, TypeError):
+		flash("Некоректний тип документа", "danger")
+		return redirect(url_for('docs.all_documents'))
+
+	try:
+		new_doc = utils.save_document_from_form(doc_type)
+		if not new_doc.counterparty_id or doc_type_name in ['IN', 'OUT'] and not new_doc.warehouse_id:
+			flash("Помилка: Склад та Контрагент обов'язкові для заповнення", "warning")
+			# Возвращаемся на ту же форму
+			return redirect(request.referrer or url_for('docs.all_documents'))
+
+		db.session.add(new_doc)
+		db.session.commit()
+		flash(f"{doc_type.value} №{new_doc.number} успішно створено", "success")
+		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
+
+	except Exception as e:
+		db.session.rollback()
+		current_app.logger.error(f"Save Document Error: {str(e)}")
+		flash(f"Не вдалося зберегти документ: {str(e)}", "danger")
+		return redirect(request.referrer or url_for('docs.all_documents'))
 
 @docs_bp.route('/documents/<int:doc_id>/generate-next', methods=['POST'])
 def create_from_parent(doc_id):
-	parent_doc = db.session.get(Document, doc_id)
-	if not parent_doc:
+	parent = db.session.get(Document, doc_id)
+	if not parent:
 		return "Документ не знайдено", 404
 
-	try:
-		service = InventoryService(db.session)
-		new_doc = None
+	existing = next((child for child in parent.children), None)
+	if existing:
+		return redirect(url_for('docs.edit_document', doc_id=existing.id))
 
-		match parent_doc.doc_type:
+	service = InventoryService(db.session)
+	try:
+		match parent.doc_type:
 			case DocumentType.ORDER:
 				new_doc = service.create_invoice_from_order(doc_id)
 			case DocumentType.INVOICE:
@@ -117,17 +162,24 @@ def create_from_parent(doc_id):
 				new_doc = service.create_tax_from_outgoing(doc_id)
 			case _:
 				flash("Не вдалося створити документ на підставі поточного", "warning")
-				return redirect(url_for('docs.edit_document', doc_id=parent_doc.id))
+				return redirect(url_for('docs.edit_document', doc_id=parent.id))
 
-		db.session.commit()
-		flash(f"Документ {new_doc.number} створено на підставі №{parent_doc.number}", "success")
-		return redirect(url_for('docs.edit_document', doc_id=new_doc.id))
+		# Передаем заголовок и признак того, что это новый документ
+		return render_template(
+			'documents/edit_document.html',
+			doc=new_doc,
+			is_new=True,
+			parent_id=doc_id,
+			counterparties=Counterparty.query.all(),
+			products=Product.query.all(),
+			warehouses=Warehouse.query.all()
+		)
 
 	except Exception as e:
 		db.session.rollback()
 		flash(f"Помилка при створенні: {str(e)}", "danger")
-		# возвращаем старый документ, чтобы страница не "упала"
-		return redirect(url_for('docs.edit_document', doc_id=parent_doc.id))
+		# возвращаем старый документ
+		return redirect(url_for('docs.edit_document', doc_id=parent.id))
 
 # --- РЕДАКТИРОВАНИЕ / ПРОВЕДЕНИЕ / УДАЛЕНИЕ / ПЕЧАТЬ ---
 
@@ -221,6 +273,8 @@ def post_document(doc_id):
 				service.post_order(doc.id)
 			case DocumentType.INVOICE:
 				service.post_invoice(doc.id)
+			case DocumentType.TAX:
+				service.post_tax(doc.id)
 
 		db.session.commit()
 		flash(f"Документ №{doc.number} проведено", "success")
@@ -233,7 +287,7 @@ def post_document(doc_id):
 		db.session.rollback()
 		flash(f"Помилка проведення: {str(e)}", "danger")
 
-	# Перенаправляем на edit_document, чтобы форма обновилась (стала disabled)
+	# Направляем на edit_document, чтобы форма стала disabled
 	return redirect(url_for('docs.edit_document', doc_id=doc.id))
 
 @docs_bp.route('/document/unpost/<int:doc_id>', methods=['POST'])
@@ -251,6 +305,8 @@ def unpost_document(doc_id):
 				service.unpost_order(doc.id)
 			case DocumentType.INVOICE:
 				service.unpost_invoice(doc.id)
+			case DocumentType.TAX:
+				service.unpost_tax(doc.id)
 
 		db.session.commit()
 		flash(f"Проведення скасовано", "warning")
@@ -289,7 +345,8 @@ def delete_document(doc_id):
 		'IN': 'docs.journal_incoming',
 		'OUT': 'docs.journal_outgoing',
 		'ORDER': 'docs.journal_orders',
-		'INVOICE': 'docs.journal_invoices'
+		'INVOICE': 'docs.journal_invoices',
+		'TAX': 'docs.journal_tax_invoices'
 	}
 	target_route = back_routes.get(doc_type, 'docs.all_documents')
 

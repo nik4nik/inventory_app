@@ -124,7 +124,7 @@ with app.app_context():
 
 	print(f"Кількість рядків після розщеплення: {len(res_lines)}")
 	for l in res_lines:
-		print(f"  -> К-сть: {l.quantity}, Собівартість: {l.cost_price}, Партія ID: {l.applied_batch_id}")
+		print(f"  -> Товар: {l.product.name}, К-сть: {l.quantity}, Ціна: {l.price}")
 
 	#  --- Тест 1. Отмена ---
 	print("\n--- Тест скасування проведення ---")

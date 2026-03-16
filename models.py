@@ -1,6 +1,7 @@
 from __future__ import annotations # для использования классов в аннотациях типов до их определения
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Optional
 import enum
 
 from flask_sqlalchemy import SQLAlchemy
@@ -120,10 +121,15 @@ class Document(db.Model):
 		nullable=True
 	)
 	parent: Mapped["Document | None"] = relationship("Document", remote_side="Document.id")
+	# Отношение для проверки наличия дочерних документов
+	children: Mapped[list["Document"]] = relationship(
+		"Document",
+		back_populates="parent"
+	)
 
 	# Склад
 	warehouse_id: Mapped[int | None] = mapped_column(
-		db.ForeignKey('warehouses.id'))
+		db.ForeignKey('warehouses.id'), nullable=True)
 	warehouse: Mapped[Warehouse] = relationship(back_populates="documents")
 
 	# Контрагент
@@ -153,43 +159,14 @@ class DocumentLine(db.Model):
 
 	__tablename__ = "document_lines"
 	id: Mapped[int] = mapped_column(Integer, primary_key=True)
-	document_id: Mapped[int] = mapped_column(
-		ForeignKey("documents.id"), nullable=False
-	)
-	product_id: Mapped[int] = mapped_column(
-		ForeignKey("products.id"), nullable=False
-	)
-	quantity: Mapped[float] = mapped_column(
-		Numeric(14, 4), nullable=False,
-		comment="Количество"
-	)
-	price: Mapped[float] = mapped_column(
-		Numeric(14, 4), nullable=False,
-		comment="Цена за единицу"
-	)
-	cost_price: Mapped[float | None] = mapped_column(
-		Numeric(14, 4), nullable=True,
-		comment="Себестоимость списания (заполняется при проведении OUT)"
-)
+	document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), nullable=False)
+	product_id: Mapped[int]	= mapped_column(ForeignKey("products.id"), nullable=False)
+
+	quantity: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False, comment="Количество")
+	price: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False, comment="Цена за единицу")
+
 	document: Mapped[Document] = relationship(back_populates="lines")
 	product: Mapped[Product] = relationship(back_populates="document_lines")
-	# Приход: связь строки прихода с созданной ею партией
-	batch: Mapped["Batch | None"] = relationship(
-		"Batch",
-		back_populates="incoming_line", uselist=False,
-		# Если строка документа создается/удаляется - создать/удалить партию
-		cascade="all, delete-orphan",
-		foreign_keys="Batch.incoming_line_id"
-	)
-	# Расход: связь указывает, какую партию списала эта строка
-	applied_batch_id: Mapped[int | None] = mapped_column(
-		ForeignKey("batches.id",
-		use_alter=True,
-		name="fk_applied_batch")
-	)
-	applied_batch: Mapped["Batch | None"] = relationship("Batch",
-		foreign_keys=[applied_batch_id]
-	)
 
 	@property
 	def total(self) -> float:
@@ -245,10 +222,12 @@ class Batch(db.Model):
 
 	warehouse: Mapped[Warehouse] = relationship(back_populates="batches")
 	product: Mapped[Product] = relationship(back_populates="batches")
-	incoming_line: Mapped[DocumentLine | None] = relationship(
-		"DocumentLine",
-		back_populates="batch",
-		foreign_keys=[incoming_line_id]
+	incoming_line: Mapped[DocumentLine] = relationship(
+		"DocumentLine", foreign_keys=[incoming_line_id]
+	)
+	# Движения по этой партии в регистре продаж
+	sales_movements: Mapped[list["SalesAccumulator"]] = relationship(
+		"SalesAccumulator", back_populates="batch"
 	)
 
 	@property
@@ -266,20 +245,21 @@ class Batch(db.Model):
 class SalesAccumulator(db.Model):
 	__tablename__ = 'sales_accumulator'
 
-	id: Mapped[int] = mapped_column(primary_key=True)
-	date: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
-	document_id: Mapped[int] = mapped_column(ForeignKey('documents.id'), nullable=False)
-	product_id: Mapped[int] = mapped_column(ForeignKey('products.id'), nullable=False)
-	counterparty_id: Mapped[int] = mapped_column(ForeignKey('counterparties.id'), nullable=False)
-	warehouse_id: Mapped[int] = mapped_column(ForeignKey('warehouses.id'), nullable=False)
+	id: Mapped[int]					= mapped_column(primary_key=True)
+	date: Mapped[datetime]			= mapped_column(DateTime, index=True, nullable=False)
+	document_id: Mapped[int]		= mapped_column(ForeignKey('documents.id'), nullable=False)
+	batch_id: Mapped[int | None]	= mapped_column(ForeignKey('batches.id'), nullable=True)
+	product_id: Mapped[int]			= mapped_column(ForeignKey('products.id'), nullable=False)
+	counterparty_id: Mapped[int]	= mapped_column(ForeignKey('counterparties.id'), nullable=False)
+	warehouse_id: Mapped[int]		= mapped_column(ForeignKey('warehouses.id'), nullable=False)
 
-	quantity: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0)
-	sale_price: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+	quantity: Mapped[Decimal]		= mapped_column(Numeric(15, 4), default=0)
+	sale_price: Mapped[Decimal]		= mapped_column(Numeric(15, 2), default=0)
 	total_sale_sum: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
 	total_cost_sum: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
 
-	# Отношения (Relationship)
-	product: Mapped["Product"] = relationship()
+	product: Mapped["Product"]			 = relationship()
 	counterparty: Mapped["Counterparty"] = relationship()
-	warehouse: Mapped["Warehouse"] = relationship()
-	document: Mapped["Document"] = relationship()
+	warehouse: Mapped["Warehouse"]		 = relationship()
+	document: Mapped["Document"]		 = relationship()
+	batch: Mapped[Optional["Batch"]]	 = relationship(back_populates="sales_movements")

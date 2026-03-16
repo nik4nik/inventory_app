@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, render_template, request
 from sqlalchemy import and_, func, select
 
-from models import Batch, db, Document, DocumentLine, Warehouse, Product, SalesAccumulator
+from models import Batch, db, Document, DocumentLine, DocumentType, Warehouse, Product, SalesAccumulator
 
 
 main_bp = Blueprint('main', __name__)
@@ -16,54 +16,70 @@ def index():
 def report_remainings():
 	date_str = request.args.get('date')
 	target_date = (datetime.strptime(date_str, '%Y-%m-%d').date() if date_str
-		else datetime.now().date())
+				  else datetime.now().date())
 	warehouse_id = request.args.get('warehouse_id', type=int)
 
-	# расходы партий на дату
+	# общий расход по каждому товару на каждом складе
 	out_subquery = (
 		select(
-			DocumentLine.applied_batch_id,
+			DocumentLine.product_id,
+			Document.warehouse_id,
 			func.sum(DocumentLine.quantity).label('total_out')
 		)
 		.join(Document, DocumentLine.document_id == Document.id)
 		.where(and_(
 			Document.date <= target_date,
 			Document.is_posted == True,
-			DocumentLine.applied_batch_id != None
+			Document.doc_type == DocumentType.OUT  # Учитываем только расходные накладные
 		))
-		.group_by(DocumentLine.applied_batch_id)
+		.group_by(DocumentLine.product_id, Document.warehouse_id)
 	).subquery()
 
-	# приходы партий
+	# Берем все приходы (партии) и сопоставляем с общим расходом
 	stmt = (
 		select(
 			Warehouse.name.label('wh_name'),
 			Product.name.label('prod_name'),
 			Batch.purchase_price,
 			DocumentLine.quantity.label('in_qty'),
-			func.coalesce(out_subquery.c.total_out, 0).label('out_qty')
+			func.coalesce(out_subquery.c.total_out, 0).label('total_out_for_product'),
+			Batch.id.label('batch_id')
 		)
 		.join(Batch, Batch.incoming_line_id == DocumentLine.id)
 		.join(Document, DocumentLine.document_id == Document.id)
 		.join(Product, Batch.product_id == Product.id)
 		.join(Warehouse, Batch.warehouse_id == Warehouse.id)
-		.outerjoin(out_subquery, Batch.id == out_subquery.c.applied_batch_id)
+		.outerjoin(out_subquery, and_(
+			Batch.product_id == out_subquery.c.product_id,
+			Batch.warehouse_id == out_subquery.c.warehouse_id
+		))
 		.where(and_(
 			Document.date <= target_date,
 			Document.is_posted == True
 		))
+		.order_by(Warehouse.name, Product.name, Document.date) # FIFO порядок
 	)
 
 	if warehouse_id:
 		stmt = stmt.where(Warehouse.id == warehouse_id)
 
 	results = db.session.execute(stmt).all()
-
 	report_data = {}
 	grand_total = 0
 
+	# словарь для отслеживания распределения общего расхода по партиям
+	consumption_tracker = {}
+
 	for row in results:
-		balance = row.in_qty - row.out_qty
+		key = (row.wh_name, row.prod_name)
+		if key not in consumption_tracker:
+			consumption_tracker[key] = row.total_out_for_product
+
+		# Сколько из этой партии уже "съедено" общим расходом
+		can_consume = min(row.in_qty, consumption_tracker[key])
+		balance = row.in_qty - can_consume
+		consumption_tracker[key] -= can_consume
+
 		if balance <= 0:
 			continue
 
@@ -72,7 +88,6 @@ def report_remainings():
 		if row.wh_name not in report_data:
 			report_data[row.wh_name] = {'products': {}, 'wh_total_sum': 0}
 
-		# Группировка партий
 		if row.prod_name not in report_data[row.wh_name]['products']:
 			report_data[row.wh_name]['products'][row.prod_name] = {'qty': 0, 'sum': 0}
 
