@@ -123,7 +123,6 @@
 						<th style="width: 15%">Кількість</th>
 						<th style="width: 15%">Ціна</th>
 						<th style="width: 15%" class="text-end">Сума</th>
-						{% if doc.doc_type.name == 'OUT' %}<th class="text-end small text-muted">FIFO</th>{% endif %}
 						<th style="width: 40px"></th>
 					</tr>
 				</thead>
@@ -146,9 +145,6 @@
 						</td>
 						<td><input type="number" name="price[]" class="form-control form-control-sm" step="0.01" value="{{ line.price }}" {% if is_posted %}disabled{% endif %} oninput="calcRow(this)"></td>
 						<td class="text-end fw-bold row-sum">{{ "%.2f"|format(line.quantity * line.price) }}</td>
-						{% if doc.doc_type.name == 'OUT' %}
-						<td class="text-end text-muted small">{{ "%.2f"|format(line.cost_price or 0) }}</td>
-						{% endif %}
 						<td class="text-center">
 							{% if not is_posted %}
 							<button type="button" class="btn btn-link text-danger p-0" onclick="this.closest('tr').remove(); updateFullTotal();">
