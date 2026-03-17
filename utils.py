@@ -20,16 +20,15 @@ def get_forms_date_and_add_current_time():
 
 def save_document_from_form(doc_type):
 	"""
-	Створює новий документ у стані чернетки на основі даних із HTTP-запиту.
+	Создает новый документ на основе HTTP-запроса.
 
-	Функція автоматично генерує номер документа, якщо він не вказаний,
-	зчитує заголовок (дата, контрагент, склад) та додає специфікацію (рядки) товарів.
+	Генерирует номер документа, если он не указан, считывает шапку и строки номенклатуры.
 
 	Args:
-		doc_type (DocumentType): Тип документа для створення (IN, OUT, ORDER, INVOICE).
+		doc_type (DocumentType): Тип создаваемого документа (IN, OUT, ORDER, INVOICE)
 
 	Returns:
-		Document: Створений об'єкт документа з прив'язаними рядками.
+		Document: Созданный объект документа с привязкой строк
 	"""
 	service = InventoryService(db.session)
 	form_number = request.form.get('number')

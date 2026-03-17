@@ -78,7 +78,7 @@ class Document(db.Model):
 	Заголовок накладной.
 
 	doc_type=IN	 — приход: создаёт партии Batch.
-	doc_type=OUT — расход: списывает партии по FIFO
+	doc_type=OUT — расход: списывает партии по FIFO.
 	"""
 
 	__tablename__ = "documents"
@@ -149,7 +149,7 @@ class DocumentLine(db.Model):
 	Строка табличной части: товар, количество, цена.
 
 	Для документа типа IN каждая строка есть источник одной партии Batch
-	(связь 1:1 через Batch.incoming_line_id)
+	(связь 1:1 через Batch.incoming_line_id).
 	"""
 
 	__tablename__ = "document_lines"
@@ -183,9 +183,9 @@ class Batch(db.Model):
 	Сортировка по created_at ASC для списания по FIFO.
 
 	Поля:
-		initial_quantity  — исходное количество (не меняется, для истории).
-		current_quantity  — остаток, доступный для списания; уменьшается
-							сервисным слоем при проведении Расходных накладных
+		initial_quantity  — исходное количество (не меняется).
+		current_quantity  — остаток для списания; уменьшается
+							при проведении Расходных накладных.
 	"""
 
 	__tablename__ = "batches"

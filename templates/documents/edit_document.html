@@ -65,7 +65,7 @@
 				<div class="col-md-3">
 					<label class="form-label small text-muted">Склад</label>
 					<select name="warehouse_id" class="form-select"
-							{% if is_posted %}disabled{% endif %}>
+							{% if is_posted %}disabled{% endif %}
 							{# Склад обов'язковий тільки для Накладних (IN/OUT) #}
 							{% if doc.doc_type.name in ['IN', 'OUT'] %}required{% endif %}>
 
@@ -83,7 +83,7 @@
 				{% endif %}
 				<div class="col-md-3">
 					<label class="form-label small text-muted">Контрагент</label>
-					<select name="counterparty_id" class="form-select" {% if is_posted %}disabled{% endif %}>
+					<select name="counterparty_id" class="form-select" {% if is_posted %}disabled{% endif %} required>
 						<option value="">-- Не обрано --</option>
 						{% for cp in counterparties %}
 						<option value="{{ cp.id }}" {% if cp.id == doc.counterparty_id %}selected{% endif %}>{{ cp.name }}</option>
@@ -223,13 +223,28 @@
 						</a>
 					{% else %}
 						{# Если нет — кнопка создания #}
-						<button type="button" hx-post="{{ url_for('docs.create_from_parent', doc_id=doc.id) }}"
-								class="btn btn-outline-primary">
-							<i class="bi bi-files"></i>
-							{% if doc.doc_type.name == 'ORDER' %} Створити Рахунок
-							{% elif doc.doc_type.name == 'OUT' %} Створити Податкову
-							{% else %} Створити Видаток {% endif %}
-						</button>
+						<span {% if doc.doc_type.name == 'OUT' and not is_posted %}
+							title="Спочатку проведіть Видаткову накладну"
+							style="cursor: not-allowed;"
+						  {% endif %}>
+							<button type="button"
+									hx-post="{{ url_for('docs.create_from_parent', doc_id=doc.id) }}"
+									class="btn btn-outline-primary"
+									{# Блокируем для не проведенной Расходной #}
+									{% if doc.doc_type.name == 'OUT' and not is_posted %}
+										disabled
+									{% endif %}>
+
+								<i class="bi bi-files"></i>
+								{% if doc.doc_type.name == 'ORDER' %}
+									Створити Рахунок
+								{% elif doc.doc_type.name == 'OUT' %}
+									Створити Податкову
+								{% else %}
+									Створити Видаток
+								{% endif %}
+							</button>
+						</span>
 					{% endif %}
 				{% endif %}
 			</div>
@@ -261,12 +276,15 @@
 
 <script>
 function addRow() {
-	const table = document.getElementById('products-table').getElementsByTagName('tbody')[0];
-	const row = table.insertRow();
+	const table = document.getElementById('products-table').getElementsByTagName('tbody')[0]
+	const row = table.insertRow()
 	row.innerHTML = `
 		<td>
-			<select name="product_id[]" class="form-select form-select-sm">
-				{% for p in products %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+			<select name="product_id[]" class="form-select form-select-sm" required>
+				<option value="" disabled selected>-- Оберіть товар --</option>
+				{% for p in products %}
+				<option value="{{ p.id }}">{{ p.name }}</option>
+				{% endfor %}
 			</select>
 		</td>
 		<td><input type="number" name="quantity[]" step="1" class="form-control form-control-sm" step="0.01" value="1" oninput="calcRow(this)"></td>
@@ -282,11 +300,11 @@ function addRow() {
 }
 
 function calcRow(input) {
-	const row = input.closest('tr');
-	const q = parseFloat(row.querySelector('[name="quantity[]"]').value) || 0;
-	const p = parseFloat(row.querySelector('[name="price[]"]').value) || 0;
-	row.querySelector('.row-sum').innerText = (q * p).toFixed(2);
-	updateFullTotal();
+	const row = input.closest('tr')
+	const q = parseFloat(row.querySelector('[name="quantity[]"]').value) || 0
+	const p = parseFloat(row.querySelector('[name="price[]"]').value) || 0
+	row.querySelector('.row-sum').innerText = (q * p).toFixed(2)
+	updateFullTotal()
 }
 
 function updateFullTotal() {
@@ -296,5 +314,30 @@ function updateFullTotal() {
 	});
 	document.getElementById('grand-total').innerText = total.toFixed(2);
 }
+
+// Функция автоматического добавления первой строки
+function checkAndAddFirstRow() {
+	// Исправлено: ID должен быть products-table, как в твоем HTML
+	const table = document.getElementById('products-table');
+	if (!table) return;
+
+	const tbody = table.querySelector('tbody');
+	// Проверяем, нет ли уже проведенного документа или существующих строк
+	const isPosted = {{ 'true' if is_posted else 'false' }};
+
+	if (tbody && tbody.rows.length === 0 && !isPosted)
+		addRow()
+}
+
+// Слушатель HTMX: срабатывает при подгрузке формы
+document.body.addEventListener('htmx:load', function(evt) {
+	checkAndAddFirstRow();
+});
+
+// На случай обычной перезагрузки страницы (F5)
+if (document.readyState === 'loading')
+	document.addEventListener('DOMContentLoaded', checkAndAddFirstRow);
+else
+	checkAndAddFirstRow()
 </script>
 {% endblock %}

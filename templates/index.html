@@ -1,16 +1,16 @@
 {% extends 'base.html' if not request.headers.get('HX-Request') else 'base_ajax.html' %}
 {% block content %}
 <div class="d-flex gap-2">
-	<a hx-get="{{ url_for('docs.create_incoming') }}"
+	<a hx-get="{{ url_for('docs.create_document', doc_type_code='incoming') }}"
 		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Прибуток
 	</a>
-	<a hx-get="{{ url_for('docs.create_order') }}"
+	<a hx-get="{{ url_for('docs.create_document', doc_type_code='order') }}"
 		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Замовлення
 	</a>
-	<a hx-get="{{ url_for('docs.create_invoice') }}"
+	<a hx-get="{{ url_for('docs.create_document', doc_type_code='invoice') }}"
 		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Рахунок
 	</a>
-	<a hx-get="{{ url_for('docs.create_outgoing') }}"
+	<a hx-get="{{ url_for('docs.create_document', doc_type_code='outgoing') }}"
 		hx-target="#main-content" hx-push-url="true" class="btn btn-info">+ Видаток
 	</a>
 </div>

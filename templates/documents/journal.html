@@ -1,13 +1,16 @@
 {% extends 'base.html' if not request.headers.get('HX-Request') else 'base_ajax.html' %}
 
 {% block content %}
-{# Определение параметров #}
 {% set target_url = '' %}
 {% set btn_style = 'btn-primary' %}
-{% if type == 'ORDER' %}{% set target_url = url_for('docs.create_order') %}
-{% elif type == 'INVOICE' %}{% set target_url = url_for('docs.create_invoice') %}{% set btn_style = 'btn-info' %}
-{% elif type == 'IN' %}{% set target_url = url_for('docs.create_incoming') %}{% set btn_style = 'btn-success' %}
-{% elif type == 'OUT' %}{% set target_url = url_for('docs.create_outgoing') %}{% set btn_style = 'btn-warning' %}
+{% if type == 'ORDER' %}
+	{% set target_url = url_for('docs.create_document', doc_type_code='order') %}
+{% elif type == 'INVOICE' %}
+	{% set target_url = url_for('docs.create_document', doc_type_code='invoice') %}
+{% elif type == 'IN' %}
+	{% set target_url = url_for('docs.create_document', doc_type_code='incoming') %}
+{% elif type == 'OUT' %}
+	{% set target_url = url_for('docs.create_document', doc_type_code='outgoing') %}
 {% endif %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -88,7 +91,11 @@
 </style>
 
 <script>
-	// Защита от повторного объявления при HTMX-навигации
+	// Обработка кликов по строкам в журнале документов, чтобы различать
+	// выделение строки одним кликом или открытие документа двойным кликом.
+	// Защита от дублирования: Флаг _docsListenerAdded гарантирует,
+	// что обработчик событий вешается на страницу ровно один раз за всю
+	// сессию работы браузера.
 	if (!window._docsListenerAdded) {
 		window._docsListenerAdded = true;
 		window._clickTimer = null;
@@ -101,34 +108,32 @@
 				clearTimeout(window._clickTimer);
 				window._clickTimer = null;
 				const url = row.dataset.rowUrl;
-				htmx.ajax('GET', url, { target: '#main-content', pushUrl: url });
-			} else {
+				htmx.ajax('GET', url, { target: '#main-content', pushUrl: url })
+			} else
 				window._clickTimer = setTimeout(() => {
 					window._clickTimer = null;
 					handleSelection(row);
-				}, 250);
-			}
-		});
+				}, 250)
+		})
 	}
 
 	function handleSelection(row) {
-		document.querySelectorAll('.doc-row').forEach(r => r.classList.remove('selected-row'));
-		row.classList.add('selected-row');
+		document.querySelectorAll('.doc-row').forEach(r => r.classList.remove('selected-row'))
+		row.classList.add('selected-row')
 
-		const docId = row.dataset.docId;
-		const basedName = row.dataset.basedName;
-		const btn = document.getElementById('btn-create-based');
-		const label = document.getElementById('based-label');
+		const docId = row.dataset.docId,
+			basedName = row.dataset.basedName,
+			btn = document.getElementById('btn-create-based'),
+			label = document.getElementById('based-label')
 
 		if (btn && label) {
 			if (basedName && basedName.length > 0) {
-				label.innerText = basedName;
-				btn.style.display = 'inline-block';
-				btn.setAttribute('hx-post', `/document/create_from/${docId}`);
+				label.innerText = basedName
+				btn.style.display = 'inline-block'
+				btn.setAttribute('hx-post', `/document/create_from/${docId}`)
 				if (typeof htmx !== 'undefined') htmx.process(btn);
-			} else {
-				btn.style.display = 'none';
-			}
+			} else
+				btn.style.display = 'none'
 		}
 	}
 </script>

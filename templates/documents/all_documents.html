@@ -105,35 +105,32 @@
 				clearTimeout(window._clickTimer);
 				window._clickTimer = null;
 				const url = row.dataset.rowUrl;
-				htmx.ajax('GET', url, { target: '#main-content', pushUrl: true });
-			} else {
+				htmx.ajax('GET', url, { target: '#main-content', pushUrl: true })
+			} else
 				window._clickTimer = setTimeout(() => {
-					window._clickTimer = null;
-					handleSelection(row);
-				}, 250);
-			}
-		});
+					window._clickTimer = null
+					handleSelection(row)
+				}, 250)
+		})
 	}
 
 	function handleSelection(row) {
-		document.querySelectorAll('.doc-row').forEach(r => r.classList.remove('selected-row'));
-		row.classList.add('selected-row');
+		document.querySelectorAll('.doc-row').forEach(r => r.classList.remove('selected-row'))
+		row.classList.add('selected-row')
 
-		const docId = row.dataset.docId;
-		const basedName = row.dataset.basedName;
-		const btn = document.getElementById('btn-create-based');
-		const label = document.getElementById('based-label');
+		const docId = row.dataset.docId,
+			basedName = row.dataset.basedName,
+			btn = document.getElementById('btn-create-based'),
+			label = document.getElementById('based-label')
 
 		if (btn && label) {
 			if (basedName && basedName.length > 0) {
-				label.innerText = basedName;
-				btn.style.display = 'inline-block';
-				// Используем правильный маршрут, который мы выяснили ранее
-				btn.setAttribute('hx-post', `/documents/${docId}/generate-next`);
-				if (typeof htmx !== 'undefined') htmx.process(btn);
-			} else {
-				btn.style.display = 'none';
-			}
+				label.innerText = basedName
+				btn.style.display = 'inline-block'
+				btn.setAttribute('hx-post', `/documents/${docId}/generate-next`)
+				if (typeof htmx !== 'undefined') htmx.process(btn)
+			} else
+				btn.style.display = 'none'
 		}
 	}
 </script>

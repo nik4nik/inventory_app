@@ -48,72 +48,34 @@ def journal_tax_invoices():
 
 # --- СОЗДАНИЕ / СОЗДАНИЕ НА ОСНОВАНИИ ---
 
-# GET роуты: вернуть пустую страницу с формой для ручного заполнения
-@docs_bp.route('/order/new', methods=['GET'])
-def create_order():
-	new_doc = Document(
-		doc_type=DocumentType.ORDER,
-		date=datetime.now(),
-		lines=[]
-	)
+# вернуть пустую страницу с формой для ручного заполнения
+@docs_bp.route('/<string:doc_type_code>/new', methods=['GET'])
+def create_document(doc_type_code):
+	selected_type = {
+		'order': DocumentType.ORDER,
+		'invoice': DocumentType.INVOICE,
+		'incoming': DocumentType.IN,
+		'outgoing': DocumentType.OUT
+	}[doc_type_code]
 
-	return render_template('documents/edit_document.html',
-		doc=new_doc,
-		counterparties=Counterparty.query.all(),
-		products=Product.query.all()
-	)
+	if not selected_type:
+		flash("Невідомий тип документа", "danger")
+		return redirect(url_for('docs.all_documents'))
 
-@docs_bp.route('/invoice/new', methods=['GET'])
-def create_invoice():
-	new_doc = Document(
-		doc_type=DocumentType.INVOICE,
-		date=datetime.now(),
-		lines=[]
-	)
+	context = {
+		'doc': Document(
+			doc_type=selected_type,
+			date=datetime.now(),
+			lines=[]
+		),
+		'counterparties': Counterparty.query.all(),
+		'products': Product.query.all(),
+		'warehouses': Warehouse.query.all() if selected_type in [DocumentType.IN, DocumentType.OUT] else []
+	}
 
-	return render_template('documents/edit_document.html',
-		doc=new_doc,
-		counterparties = Counterparty.query.all(),
-		products = Product.query.all()
-	)
+	return render_template('documents/edit_document.html', **context)
 
-@docs_bp.route('/incoming/new', methods=['GET'])
-def create_incoming():
-	new_doc = Document(
-		doc_type=DocumentType.IN,
-		date=datetime.now(),
-		lines=[]
-	)
-
-	warehouses = Warehouse.query.all()
-	counterparties = Counterparty.query.all()
-	products = Product.query.all()
-	return render_template('documents/edit_document.html',
-		doc=new_doc,
-		warehouses=warehouses,
-		counterparties=counterparties,
-		products=products
-	)
-
-@docs_bp.route('/outgoing/new', methods=['GET'])
-def create_outgoing():
-	new_doc = Document(
-		doc_type=DocumentType.IN,
-		date=datetime.now(),
-		lines=[]
-	)
-
-	warehouses = Warehouse.query.all()
-	counterparties = Counterparty.query.all()
-	products = Product.query.all()
-	return render_template('documents/edit_document.html',
-		doc=new_doc,
-		warehouses=warehouses,
-		counterparties=counterparties,
-		products=products
-	)
-
-# POST общий роут: для данных от пустых форм и от форм «на основании»
+# для данных от пустых форм и от форм «на основании»
 @docs_bp.route('/documents/save-new', methods=['POST'])
 def save_new_document():
 	doc_type_name = request.form.get('doc_type')
@@ -125,7 +87,8 @@ def save_new_document():
 
 	try:
 		new_doc = utils.save_document_from_form(doc_type)
-		if not new_doc.counterparty_id or doc_type_name in ['IN', 'OUT'] and not new_doc.warehouse_id:
+		if ( not new_doc.counterparty_id or
+				doc_type_name in ['IN', 'OUT'] and not new_doc.warehouse_id ):
 			flash("Помилка: Склад та Контрагент обов'язкові для заповнення", "warning")
 			# Возвращаемся на ту же форму
 			return redirect(request.referrer or url_for('docs.all_documents'))
@@ -146,6 +109,18 @@ def create_from_parent(doc_id):
 	parent = db.session.get(Document, doc_id)
 	if not parent:
 		return "Документ не знайдено", 404
+
+	# дополнительная необязательная проверка на сервере,
+	# основная проверка делается на уровне html-формы
+	if parent.doc_type == DocumentType.OUT and not parent.is_posted:
+		flash("Помилка: Неможливо створити податкову накладну для непроведеного документа!", "warning")
+
+		return render_template('documents/edit_document.html',
+			doc=parent,
+			is_posted=parent.is_posted,
+			warehouses=Warehouse.query.all(),
+			counterparties=Counterparty.query.all(),
+			products=Product.query.all()), 422
 
 	existing = next((child for child in parent.children), None)
 	if existing:
