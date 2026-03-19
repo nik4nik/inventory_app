@@ -13,7 +13,7 @@ import utils
 
 docs_bp = Blueprint('docs', __name__)
 
-# --- ЖУРНАЛЫ ДОКУМЕНТОВ ---
+#	ЖУРНАЛЫ ДОКУМЕНТОВ
 
 @docs_bp.route('/all_documents')
 def all_documents():
@@ -46,9 +46,9 @@ def journal_tax_invoices():
 	docs = utils.get_journal_docs(DocumentType.TAX)
 	return render_template('documents/journal.html', docs=docs, title="Податкові накладні", type='TAX')
 
-# --- СОЗДАНИЕ / СОЗДАНИЕ НА ОСНОВАНИИ ---
+#	СОЗДАНИЕ / СОЗДАНИЕ НА ОСНОВАНИИ
 
-# вернуть пустую страницу с формой для ручного заполнения
+# вернуть пустую форму для ручного заполнения
 @docs_bp.route('/<string:doc_type_code>/new', methods=['GET'])
 def create_document(doc_type_code):
 	selected_type = {
@@ -75,7 +75,7 @@ def create_document(doc_type_code):
 
 	return render_template('documents/edit_document.html', **context)
 
-# для данных от пустых форм и от форм «на основании»
+# для данных после заполнения форм и от форм «на основании»
 @docs_bp.route('/documents/save-new', methods=['POST'])
 def save_new_document():
 	doc_type_name = request.form.get('doc_type')
@@ -90,7 +90,7 @@ def save_new_document():
 		if ( not new_doc.counterparty_id or
 				doc_type_name in ['IN', 'OUT'] and not new_doc.warehouse_id ):
 			flash("Помилка: Склад та Контрагент обов'язкові для заповнення", "warning")
-			# Возвращаемся на ту же форму
+			# Возврат к той же форме
 			return redirect(request.referrer or url_for('docs.all_documents'))
 
 		db.session.add(new_doc)
@@ -130,16 +130,16 @@ def create_from_parent(doc_id):
 	try:
 		match parent.doc_type:
 			case DocumentType.ORDER:
-				new_doc = service.create_invoice_from_order(doc_id)
+				new_doc = service.create_invoice_from_parent(doc_id, DocumentType.INVOICE)
 			case DocumentType.INVOICE:
-				new_doc = service.create_outgoing_from_invoice(doc_id)
+				new_doc = service.create_invoice_from_parent(doc_id, DocumentType.OUT)
 			case DocumentType.OUT:
-				new_doc = service.create_tax_from_outgoing(doc_id)
+				new_doc = service.create_invoice_from_parent(doc_id, DocumentType.TAX)
 			case _:
 				flash("Не вдалося створити документ на підставі поточного", "warning")
 				return redirect(url_for('docs.edit_document', doc_id=parent.id))
 
-		# Передаем заголовок и признак того, что это новый документ
+		# Передаем заголовок и признак нового документа
 		return render_template(
 			'documents/edit_document.html',
 			doc=new_doc,
@@ -153,14 +153,14 @@ def create_from_parent(doc_id):
 	except Exception as e:
 		db.session.rollback()
 		flash(f"Помилка при створенні: {str(e)}", "danger")
-		# возвращаем старый документ
+		# возврат старого документа
 		return redirect(url_for('docs.edit_document', doc_id=parent.id))
 
-# --- РЕДАКТИРОВАНИЕ / ПРОВЕДЕНИЕ / УДАЛЕНИЕ / ПЕЧАТЬ ---
+#	РЕДАКТИРОВАНИЕ / ПРОВЕДЕНИЕ / УДАЛЕНИЕ / ПЕЧАТЬ
 
 @docs_bp.route('/documents/<int:doc_id>/edit', methods=['GET', 'POST'])
 def edit_document(doc_id):
-	# Загружаем документ со всеми связями сразу
+	# Загружаем документ со всеми связями
 	doc = db.session.query(Document).options(
 		joinedload(Document.lines).joinedload(DocumentLine.product),
 		joinedload(Document.counterparty),
@@ -176,14 +176,13 @@ def edit_document(doc_id):
 		# Если документ проведен, запрещаем изменения через POST
 		if doc.is_posted:
 			flash("Не можна редагувати проведений документ!", "warning")
-			# Просто возвращаем ту же форму в режиме просмотра
+			# Возвращаем ту же форму в режиме просмотра
 		else:
-			try:# Когда получаем дату из формы, она приходит в формате YYYY-MM-DD (без времени).
-				# Объединяем: дата из формы + время из системы
+			try:# Получаем дату из формы в формате YYYY-MM-DD (без времени).
+				# Объединим: дата из формы + время из системы
 				doc.date = utils.get_forms_date_and_add_current_time()
-				# Пользователь просто выбирает день.
-				# В базе и в журналах будет видно точное время,
-				# что позволит сортировать документы в правильном порядке их создания
+				# Пользователь выбирает день, а в базе и журналах видно точное время,
+				# что позволяет сортировать документы в порядке их создания
 
 				doc.warehouse_id = request.form.get('warehouse_id') or None
 				doc.counterparty_id = request.form.get('counterparty_id') or None
@@ -243,12 +242,8 @@ def post_document(doc_id):
 				service.post_incoming_invoice(doc.id)
 			case DocumentType.OUT:
 				service.post_outgoing_invoice(doc.id)
-			case DocumentType.ORDER:
-				service.post_order(doc.id)
-			case DocumentType.INVOICE:
-				service.post_invoice(doc.id)
-			case DocumentType.TAX:
-				service.post_tax(doc.id)
+			case _:
+				service.post_simple(doc.id)
 
 		db.session.commit()
 		flash(f"Документ №{doc.number} проведено", "success")
@@ -275,12 +270,8 @@ def unpost_document(doc_id):
 				service.unpost_incoming_invoice(doc.id)
 			case DocumentType.OUT:
 				service.unpost_outgoing_invoice(doc.id)
-			case DocumentType.ORDER:
-				service.unpost_order(doc.id)
-			case DocumentType.INVOICE:
-				service.unpost_invoice(doc.id)
-			case DocumentType.TAX:
-				service.unpost_tax(doc.id)
+			case _:
+				service.unpost_simple(doc.id)
 
 		db.session.commit()
 		flash(f"Проведення скасовано", "warning")
@@ -288,7 +279,7 @@ def unpost_document(doc_id):
 		db.session.rollback()
 		flash(f"Помилка скасування: {str(e)}", "danger")
 
-	# Перенаправляем на edit_document, чтобы поля снова стали активными
+	# Перенаправляем на edit_document, чтобы активизировать поля
 	return redirect(url_for('docs.edit_document', doc_id=doc.id))
 
 @docs_bp.route('/document/delete/<int:doc_id>', methods=['DELETE', 'POST'])

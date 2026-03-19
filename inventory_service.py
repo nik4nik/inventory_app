@@ -12,9 +12,13 @@ from models import Batch, db, Document, DocumentLine, DocumentType, SalesAccumul
 class InsufficientStockError(Exception):
 	"""Недостаточно товара на складе для списания"""
 
-	def __init__(self, product_id: int, product_name: str,
-				warehouse_id: int, warehouse_name: str,
-				required: Decimal, available: Decimal) -> None:
+	def __init__(self,
+			product_id: int,
+			product_name: str,
+			warehouse_id: int,
+			warehouse_name: str,
+			required: Decimal,
+			available: Decimal) -> None:
 		self.product_id = product_id
 		self.warehouse_name = warehouse_name
 		self.product_name = product_name
@@ -26,9 +30,6 @@ class InsufficientStockError(Exception):
 			f"требуется {required}, доступно {available}, "
 			f"не хватает {shortage}."
 		)
-
-class DocumentAlreadyPostedError(Exception):
-	"""Попытка перепровести уже проведённый документ"""
 
 class InventoryService:
 	"""
@@ -42,7 +43,6 @@ class InventoryService:
 		self._session = _session
 
 	def create_document(self, doc_type, **kwargs):
-		# Если номер не передан - генерируем
 		if 'number' not in kwargs:
 			kwargs['number'] = self.generate_next_number(doc_type)
 
@@ -71,23 +71,15 @@ class InventoryService:
 		if not last_doc or not last_doc.number:
 			return f"{prefix}-001"
 
-		# Извлекаем число из строки (например, из "ЗП-005" достаем 5)
+		# Получить число из строки, например, из "ЗП-005" получим 5
 		match = re.search(r'(\d+)$', last_doc.number)
 		if match:
 			next_num = int(match.group(1)) + 1
-			return f"{prefix}-{next_num:03d}" # Форматируем как 001, 002...
+			return f"{prefix}-{next_num:03d}"
 
 		return f"{prefix}-001"
 
 # Проведение
-
-	def _check_not_posted(self, doc: Document) -> None:
-		"""Запретить перепроведение."""
-		if doc.is_posted:
-			raise DocumentAlreadyPostedError(
-				f"Документ №{doc.number} (id={doc.id}) уже проведён. "
-				"Перепроведение запрещено. Сначала отмените документ."
-			)
 
 	def post_incoming_invoice(self, document_id: int):
 		"""
@@ -95,7 +87,6 @@ class InventoryService:
 		Для каждой строки-товара(не услуги) создаёт запись Batch.
 		"""
 		doc = self._session.get(Document, document_id)
-		self._check_not_posted(doc)
 
 		for line in doc.lines:
 			if line.product.is_service:
@@ -106,7 +97,7 @@ class InventoryService:
 				select(Batch).where(Batch.incoming_line_id == line.id)
 			)
 			if existing_batch:
-				# Если партия есть, обновляем её (на случай изменений в строке)
+				# Если партия есть, обновляем её, на случай изменений в строке
 				existing_batch.current_quantity = line.quantity
 				existing_batch.initial_quantity = line.quantity
 				existing_batch.purchase_price = line.price
@@ -135,7 +126,6 @@ class InventoryService:
 		"""
 
 		doc = self._session.get(Document, document_id)
-		self._check_not_posted(doc)
 		if not doc:
 			raise ValueError("Документ не знайдено")
 
@@ -222,38 +212,13 @@ class InventoryService:
 		doc.is_posted = True
 		self._session.commit()
 
-	def post_order(self, document_id: int):
-		"""
-		Провести замовлення покупця.
-		Тільки змінює статус проведеності.
-		"""
+	def post_simple(self, document_id: int):
+		"""Встановлює статус проведеності"""
+
 		doc = self._session.get(Document, document_id)
-		self._check_not_posted(doc) # Проверка, что документ не проведен
-
-		doc.is_posted = True
-		self._session.commit()
-
-	def post_invoice(self, document_id: int):
-		"""
-		Провести рахунок-фактуру.
-		Тільки змінює статус проведеності.
-		"""
-		doc = self._session.get(Document, document_id)
-		self._check_not_posted(doc)
-
-		doc.is_posted = True
-		self._session.commit()
-
-	def post_tax(self, document_id: int):
-		"""
-		Провести податкову.
-		Тільки змінює статус проведеності.
-		"""
-		doc = self._session.get(Document, document_id)
-		self._check_not_posted(doc)
-
-		doc.is_posted = True
-		self._session.commit()
+		if not doc.is_posted:
+			doc.is_posted = True
+			self._session.commit()
 
 # Отмена проведения
 
@@ -264,7 +229,7 @@ class InventoryService:
 			raise ValueError("Документ не знайдено")
 
 		if not doc.is_posted:
-			return doc # Уже не проведен
+			return doc
 
 		for line in doc.lines:
 			if line.batch:
@@ -282,12 +247,12 @@ class InventoryService:
 		if not doc or not doc.is_posted:
 			return doc
 
-		# Берем из регистра все движения документа
+		# Берем из регистра движения документа
 		movements = self._session.execute(
 			select(SalesAccumulator).where(SalesAccumulator.document_id == document_id)
 		).scalars().all()
 
-		# Возвращаем остатки точно в те партии, откуда они пришли
+		# Возвращаем остатки в те партии, откуда они пришли
 		for move in movements:
 			if move.batch_id:
 				batch = self._session.get(Batch, move.batch_id)
@@ -302,67 +267,29 @@ class InventoryService:
 		doc.is_posted = False
 		self._session.commit()
 
-	def unpost_order(self, document_id: int):
-		"""
-		Скасувати проведення замовлення.
-		"""
+	def unpost_simple(self, document_id: int):
+		"""Скасувати проведення"""
+
 		doc = self._session.get(Document, document_id)
-		if not doc.is_posted:
-			return # Уже не проведен
-
-		doc.is_posted = False
-		self._session.commit()
-
-	def unpost_invoice(self, document_id: int):
-		"""
-		Скасувати проведення рахунку.
-		"""
-		doc = self._session.get(Document, document_id)
-		if not doc.is_posted:
-			return
-
-		doc.is_posted = False
-		self._session.commit()
-
-	def unpost_tax(self, document_id: int):
-		"""
-		Скасувати проведення податкової.
-		"""
-		doc = self._session.get(Document, document_id)
-		if not doc.is_posted:
-			return
-
-		doc.is_posted = False
-		self._session.commit()
+		if doc.is_posted:
+			doc.is_posted = False
+			self._session.commit()
 
 # Создание на основании
 
-	def _create_from_parent(self, parent_id: int, target_type: DocumentType) -> Document:
-		# Получаем исходный документ
-		parent = self._session.get(Document, parent_id)
+	def create_invoice_from_parent(self, doc_id: int, new_doc_type: DocumentType) -> Document:
+		parent = self._session.get(Document, doc_id)
 		if not parent:
 			raise ValueError("Вихідний документ не знайдено")
 
-		# Создаем новый заголовок
 		new_doc = Document(
-			number=self.generate_next_number(target_type),
-			date=datetime.date.today(),
-			doc_type=target_type,
+			doc_type=new_doc_type,
 			parent_id=parent.id,
-			is_posted=False,
-			warehouse_id=parent.warehouse_id,
 			counterparty_id=parent.counterparty_id,
+			warehouse_id=parent.warehouse_id,
+			date=datetime.datetime.now(),
 			note=f"Створено на підставі {parent.number}"
 		)
-		# объект из состояния Transient (объект в памяти)
-		# переходит в состояние Pending (в очереди на запись)
-		self._session.add(new_doc)
-		# Поле id генерируется базой данных (Auto-increment),
-		# выполним вставку, чтобы база вернула сгенерированный номер
-		# invoice.id перестает быть None и получает реальное значение
-		self._session.flush()
-
-		# Копируем строки
 		for line in parent.lines:
 			new_line = DocumentLine(
 				document_id=new_doc.id,
@@ -370,65 +297,6 @@ class InventoryService:
 				quantity=line.quantity,
 				price=line.price
 			)
-			self._session.add(new_line)
-
-		return new_doc
-
-	def create_invoice_from_order(self, order_id: int) -> Document:
-		order = self._session.get(Document, order_id)
-		new_doc = Document(
-			doc_type=DocumentType.INVOICE,
-			parent_id=order.id,
-			counterparty_id=order.counterparty_id,
-			warehouse_id=order.warehouse_id,
-			date=datetime.datetime.now(),
-			# номер пока не присваиваем, если он генерируется при сохранении
-		)
-		for line in order.lines:
-			new_line = DocumentLine(
-				product_id=line.product_id,
-				quantity=line.quantity,
-				price=line.price
-			)
 			new_doc.lines.append(new_line)
 
 		return new_doc
-
-	def create_outgoing_from_invoice(self, invoice_id: int) -> Document:
-		invoice = self._session.get(Document, invoice_id)
-		new_doc = Document(
-			doc_type=DocumentType.OUT,
-			parent_id=invoice.id,
-			counterparty_id=invoice.counterparty_id,
-			warehouse_id=invoice.warehouse_id,
-			date=datetime.datetime.now(),
-			# номер пока не присваиваем, если он генерируется при сохранении
-		)
-		for line in invoice.lines:
-			new_line = DocumentLine(
-				product_id=line.product_id,
-				quantity=line.quantity,
-				price=line.price
-			)
-			new_doc.lines.append(new_line)
-
-		return new_doc
-
-	def create_tax_from_outgoing(self, outgoing_id) -> Document:
-		outgoing = self._session.get(Document, outgoing_id)
-		new_tax = Document(
-			doc_type=DocumentType.TAX,
-			parent_id=outgoing.id,
-			date=datetime.datetime.now(),
-			counterparty_id=outgoing.counterparty_id,
-			warehouse_id=outgoing.warehouse_id
-		)
-		for line in outgoing.lines:
-			new_line = DocumentLine(
-				product_id=line.product_id,
-				quantity=line.quantity,
-				price=line.price
-			)
-			new_tax.lines.append(new_line)
-
-		return new_tax

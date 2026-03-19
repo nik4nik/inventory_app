@@ -3,7 +3,8 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, render_template, request
 from sqlalchemy import and_, func, select
 
-from models import Batch, db, Document, DocumentLine, DocumentType, Warehouse, Product, SalesAccumulator
+from models import (Batch, db, Document, DocumentLine, DocumentType, Warehouse,
+	Product, SalesAccumulator)
 
 
 main_bp = Blueprint('main', __name__)
@@ -19,7 +20,7 @@ def report_remainings():
 				  else datetime.now().date())
 	warehouse_id = request.args.get('warehouse_id', type=int)
 
-	# общий расход по каждому товару на каждом складе
+	# общий расход каждого товара на каждом складе
 	out_subquery = (
 		select(
 			DocumentLine.product_id,
@@ -30,12 +31,12 @@ def report_remainings():
 		.where(and_(
 			Document.date <= target_date,
 			Document.is_posted == True,
-			Document.doc_type == DocumentType.OUT  # только расходные накладные
+			Document.doc_type == DocumentType.OUT
 		))
 		.group_by(DocumentLine.product_id, Document.warehouse_id)
 	).subquery()
 
-	# Берем все приходы и сопоставляем с общим расходом
+	# Все приходы сопоставляем с общим расходом
 	stmt = (
 		select(
 			Warehouse.name.label('wh_name'),
@@ -57,7 +58,7 @@ def report_remainings():
 			Document.date <= target_date,
 			Document.is_posted == True
 		))
-		.order_by(Warehouse.name, Product.name, Document.date) # FIFO порядок
+		.order_by(Warehouse.name, Product.name, Document.date) # FIFO
 	)
 
 	if warehouse_id:
@@ -75,13 +76,12 @@ def report_remainings():
 		if key not in consumption_tracker:
 			consumption_tracker[key] = row.total_out_for_product
 
-		# Сколько из этой партии уже "съедено" общим расходом
+		# Сколько из этой партии уже израсходовано
 		can_consume = min(row.in_qty, consumption_tracker[key])
 		balance = row.in_qty - can_consume
 		consumption_tracker[key] -= can_consume
 
-		if balance <= 0:
-			continue
+		if balance <= 0: continue
 
 		cost_sum = balance * row.purchase_price
 
@@ -154,7 +154,7 @@ def report_sales():
 
 @main_bp.route('/report_income')
 def report_income():
-	# по умолчанию за последние 30 дней
+	# по умолчанию за 30 дней
 	start_str = request.args.get('start_date')
 	end_str = request.args.get('end_date')
 
@@ -199,12 +199,10 @@ def report_income():
 
 	grand_profit = grand_sales - grand_cost
 
-	return render_template(
-		'report_income.html',
-		rows=report_rows,
-		start_date=start_date.strftime('%Y-%m-%d'),
-		end_date=end_date.strftime('%Y-%m-%d'),
-		grand_sales=grand_sales,
-		grand_cost=grand_cost,
-		grand_profit=grand_profit
-	)
+	return render_template('report_income.html',
+							rows=report_rows,
+							start_date=start_date.strftime('%Y-%m-%d'),
+							end_date=end_date.strftime('%Y-%m-%d'),
+							grand_sales=grand_sales,
+							grand_cost=grand_cost,
+							grand_profit=grand_profit)

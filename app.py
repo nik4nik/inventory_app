@@ -1,8 +1,9 @@
 from flask import Flask
 
 from models import db # экземпляр класса SQLAlchemy
-from routes_main import main_bp
-from routes_docs import docs_bp
+from routes.routes_main import main_bp
+from routes.routes_docs import docs_bp
+
 
 def create_app():
 	app = Flask(__name__)
